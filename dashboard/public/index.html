@@ -1,159 +1,625 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bluxmart Admin</title>
-<link rel="stylesheet" href="/styles.css">
-<meta name="color-scheme" content="light dark">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bluxmart Unified Bot &amp; Delivery Console</title>
+  <link rel="stylesheet" href="/styles.css">
+  <meta name="color-scheme" content="dark">
 </head>
 <body>
 <div class="app">
+  <!-- SIDEBAR NAVIGATION -->
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-mark">B</div>
-      <div class="brand-text"><strong>Bluxmart</strong><span>Bot Admin Console</span></div>
+      <div class="brand-text">
+        <strong>Bluxmart Unified</strong>
+        <span>Bot &amp; Delivery Console</span>
+      </div>
     </div>
-    <div class="nav-label">Manage</div>
+    
+    <div class="nav-label">Navigation</div>
     <nav id="nav">
-      <button class="nav-btn active" data-view="overview"><span class="ico">◉</span><span class="lbl">Overview</span></button>
-      <button class="nav-btn" data-view="servers"><span class="ico">▦</span><span class="lbl">Servers</span></button>
-      <button class="nav-btn" data-view="template"><span class="ico">⚙</span><span class="lbl">Roles &amp; Channels</span></button>
-      <button class="nav-btn" data-view="tickets"><span class="ico">✉</span><span class="lbl">Tickets &amp; Panels</span></button>
-      <button class="nav-btn" data-view="settings"><span class="ico">●</span><span class="lbl">Settings</span></button>
+      <button class="nav-btn active" data-view="overview">
+        <span class="ico">📊</span>
+        <span class="lbl">Overview</span>
+      </button>
+      <button class="nav-btn" data-view="delivery">
+        <span class="ico">🛒</span>
+        <span class="lbl">Auto-Delivery</span>
+        <span id="queue-badge" class="nav-pill" style="display:none">0</span>
+      </button>
+      <button class="nav-btn" data-view="botting">
+        <span class="ico">⛏️</span>
+        <span class="lbl">Minecraft Bot</span>
+        <span id="mc-nav-pill" class="nav-status-dot off"></span>
+      </button>
+      <button class="nav-btn" data-view="discord">
+        <span class="ico">🤖</span>
+        <span class="lbl">Discord Bot</span>
+        <span id="dc-nav-pill" class="nav-status-dot off"></span>
+      </button>
+      <button class="nav-btn" data-view="settings">
+        <span class="ico">🔒</span>
+        <span class="lbl">Security &amp; Settings</span>
+      </button>
     </nav>
+
     <div class="sidebar-foot">
       <div class="user-chip">
         <div class="avatar" id="avatar">A</div>
-        <div class="uinfo"><strong id="uname">…</strong><span>Administrator</span></div>
+        <div class="uinfo">
+          <strong id="uname">Admin</strong>
+          <span>Administrator</span>
+        </div>
       </div>
       <button class="btn btn-secondary btn-block" id="logout">Sign out</button>
     </div>
   </aside>
 
+  <!-- MAIN VIEW CONTAINER -->
   <main class="main">
-    <div class="topbar">
+    <!-- TOPBAR -->
+    <header class="topbar">
       <div>
         <h1 id="title">Overview</h1>
-        <p id="subtitle">Live bot status and server configuration.</p>
+        <p id="subtitle">Unified status for Minecraft Auto-Delivery and Discord Bot</p>
       </div>
-      <div class="status-pill"><span class="dot" id="dot"></span><span id="botstate">Connecting…</span></div>
-    </div>
+      <div class="topbar-actions">
+        <div class="status-pill" id="global-status-pill">
+          <span class="dot off" id="dot"></span>
+          <span id="botstate">Connecting…</span>
+        </div>
+        <button class="btn btn-secondary" id="refresh" title="Refresh Live Data">
+          <span class="ico">🔄</span> Refresh
+        </button>
+      </div>
+    </header>
 
-    <!-- OVERVIEW -->
+    <!-- 1. OVERVIEW VIEW -->
     <section class="view active" id="view-overview">
-      <div class="grid" id="statgrid"></div>
+      <div class="grid" id="statgrid">
+        <div class="card stat-card">
+          <div class="stat-head">
+            <span class="stat-title">Minecraft Bot</span>
+            <span class="badge" id="stat-mc-badge">Offline</span>
+          </div>
+          <div class="big" id="stat-mc-user">—</div>
+          <p class="muted" id="stat-mc-sub">donutsmp.net:25565</p>
+        </div>
+
+        <div class="card stat-card">
+          <div class="stat-head">
+            <span class="stat-title">Delivery Queue</span>
+            <span class="badge blue" id="stat-queue-badge">0 Active</span>
+          </div>
+          <div class="big" id="stat-queue-count">0</div>
+          <p class="muted" id="stat-queue-sub">0 completed today</p>
+        </div>
+
+        <div class="card stat-card">
+          <div class="stat-head">
+            <span class="stat-title">Discord Bot</span>
+            <span class="badge" id="stat-dc-badge">Offline</span>
+          </div>
+          <div class="big" id="stat-dc-tag">—</div>
+          <p class="muted" id="stat-dc-sub">0 servers managed</p>
+        </div>
+
+        <div class="card stat-card">
+          <div class="stat-head">
+            <span class="stat-title">Bluxmart Cloud Sync</span>
+            <span class="badge green" id="stat-sync-badge">Live</span>
+          </div>
+          <div class="big" id="stat-sync-state">Connected</div>
+          <p class="muted" id="stat-sync-sub">Last checked just now</p>
+        </div>
+      </div>
+
+      <!-- Quick Actions Bar -->
       <div class="section">
-        <div class="section-head"><h2>Connection</h2></div>
-        <div class="card">
-          <div class="kv" id="envkv"></div>
-          <div class="toolbar">
-            <button class="btn btn-secondary" id="refresh">Refresh status</button>
+        <div class="section-head"><h2>Quick Actions</h2></div>
+        <div class="card quick-actions-card">
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="btn-quick-start-bot">
+              <span>▶</span> Start Minecraft Bot
+            </button>
+            <button class="btn btn-danger" id="btn-quick-stop-bot">
+              <span>⏹</span> Stop Minecraft Bot
+            </button>
+            <button class="btn btn-secondary" id="btn-quick-sync-orders">
+              <span>🔄</span> Force Sync Orders
+            </button>
+            <button class="btn btn-secondary" id="btn-quick-sync-discord">
+              <span>🤖</span> Sync Discord Guild
+            </button>
+            <button class="btn btn-secondary" id="btn-quick-create-order">
+              <span>➕</span> Dispatch Test Order
+            </button>
           </div>
         </div>
       </div>
-      <div class="section">
-        <div class="section-head"><h2>Quick guide</h2></div>
+
+      <!-- Recent Orders & Event Stream Split -->
+      <div class="section split-grid">
         <div class="card">
-          <p class="muted" style="margin:0">Edit mappings under Servers, the template under Roles &amp; Channels, or ticket buttons and panels under Tickets &amp; Panels. Saving applies changes in place through live sync. Existing resources and message history are preserved; nothing is recreated or cleaned up.</p>
+          <div class="card-header-flex">
+            <h3>Recent Delivery Orders</h3>
+            <button class="btn btn-ghost btn-sm" id="btn-goto-delivery">View all &rarr;</button>
+          </div>
+          <div class="table-scroll">
+            <table class="compact-table">
+              <thead>
+                <tr>
+                  <th>Recipient</th>
+                  <th>Order ID</th>
+                  <th>Items</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="overview-orders-tbody">
+                <tr><td colspan="4" class="empty-cell">No active orders in delivery queue</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header-flex">
+            <h3>Live Bot Activity</h3>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-overview-logs">Clear</button>
+          </div>
+          <div class="terminal-box compact-terminal" id="overview-log-console">
+            <div class="terminal-line text-muted">[System] Monitoring engine live. Waiting for events...</div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- SERVERS -->
-    <section class="view" id="view-servers">
-      <div class="section-head"><h2>Servers</h2><span class="muted" id="guildcount"></span></div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
-        <div class="card">
-          <h3>Servers</h3>
-          <p class="muted">Pick a server to edit its channel mappings.</p>
-          <div class="list" id="guildlist"></div>
+    <!-- 2. AUTO-DELIVERY VIEW -->
+    <section class="view" id="view-delivery">
+      <div class="section-head">
+        <div>
+          <h2>DonutSMP Auto-Delivery Queue</h2>
+          <p class="muted" style="margin:2px 0 0">Real-time order synchronization with Bluxmart.com and in-game bot delivery</p>
         </div>
-        <div class="card">
-          <h3 id="gtitle">Select a server</h3>
-          <p class="muted" id="gsub">Channel IDs must already exist in that server.</p>
-          <div id="gform" style="display:none">
-            <div class="field"><label>Welcome channel ID</label><select id="f-welcome"></select></div>
-            <div class="field"><label>Log channel ID</label><select id="f-log"></select></div>
-            <div class="field"><label>Ticket category ID</label><input type="text" id="f-cat" maxlength="32"></div>
-            <div class="field"><label>Auto-role ID</label><select id="f-role"></select></div>
-            <div class="toolbar">
-              <button class="btn btn-primary" id="gsave">Save mappings</button>
-            </div>
-            <div id="gmsg"></div>
-          </div>
-          <div class="section" id="gdetail"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TEMPLATE -->
-    <section class="view" id="view-template">
-      <div class="section-head"><h2>Roles &amp; channels template</h2>
         <div class="toolbar" style="margin:0">
-          <button class="btn btn-secondary" id="t-reset">Restore defaults</button>
-          <button class="btn btn-primary" id="t-save">Save template</button>
+          <button class="btn btn-secondary" id="btn-sync-cloud-now">
+            <span>🔄</span> Sync with Bluxmart Cloud
+          </button>
+          <button class="btn btn-primary" id="btn-open-create-order-modal">
+            <span>➕</span> Create Manual Order
+          </button>
         </div>
       </div>
-      <div id="tmsg"></div>
+
       <div class="card">
-        <h3>Roles</h3>
-        <p class="muted">Applied in order when you save. Permissions use Discord names like Administrator and ManageMessages.</p>
-        <div class="table-scroll"><table><thead><tr><th>Name</th><th>Color</th><th>Permissions</th><th></th></tr></thead><tbody id="roles"></tbody></table></div>
-        <div class="toolbar"><button class="btn btn-secondary" id="role-add">+ Add role</button></div>
+        <div class="filter-bar">
+          <div class="search-wrap">
+            <input type="text" id="order-search-input" placeholder="Search by Order ID or Player IGN…">
+          </div>
+          <div class="filter-tabs" id="order-status-filters">
+            <button class="filter-btn active" data-filter="all">All (<span id="count-all">0</span>)</button>
+            <button class="filter-btn" data-filter="queued">Queued (<span id="count-queued">0</span>)</button>
+            <button class="filter-btn" data-filter="delivering">Delivering (<span id="count-delivering">0</span>)</button>
+            <button class="filter-btn" data-filter="completed">Completed (<span id="count-completed">0</span>)</button>
+            <button class="filter-btn" data-filter="failed">Failed (<span id="count-failed">0</span>)</button>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Buyer IGN</th>
+                <th>Order ID</th>
+                <th>Delivery Contents</th>
+                <th>Status</th>
+                <th>Added</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="delivery-queue-tbody">
+              <tr><td colspan="6" class="empty-cell">Delivery queue is empty. Sync with Bluxmart.com or create a manual test order.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
+
       <div class="section card">
-        <h3>Categories &amp; channels</h3>
-        <p class="muted">Keys must be unique (a–z, 0–9, _). Special keys: welcome, rules, tickets, ticketlogs, modlog, staff, stock, review_submit, review_display. Removing an item from the template stops managing it but never deletes it from Discord.</p>
-        <div id="cats"></div>
-        <div class="toolbar"><button class="btn btn-secondary" id="cat-add">+ Add category</button></div>
+        <h3>Cloud Integration Status</h3>
+        <div class="kv" id="cloud-sync-kv">
+          <div><small>Endpoint URL</small><code class="mono" id="cloud-site-url">https://bluxmart.com/api/bot/sync</code></div>
+          <div><small>Sync Status</small><span class="badge green" id="cloud-sync-status-badge">OK</span></div>
+          <div><small>Last Sync Timestamp</small><code class="mono" id="cloud-last-sync-time">Never</code></div>
+          <div><small>Active Bot Delivery Worker</small><code class="mono" id="cloud-worker-bot">Connecting…</code></div>
+        </div>
       </div>
     </section>
 
-    <!-- TICKETS -->
-    <section class="view" id="view-tickets">
-      <div class="section-head"><h2>Tickets &amp; message panels</h2>
-        <button class="btn btn-primary" id="k-save">Save tickets &amp; panels</button>
+    <!-- 3. MINECRAFT BOT (TRAFFICERMC) VIEW -->
+    <section class="view" id="view-botting">
+      <div class="section-head">
+        <div>
+          <h2>Minecraft Bot Session &amp; Controls</h2>
+          <p class="muted" style="margin:2px 0 0">Configure bot identity, connection options, safety rules and live in-game actions</p>
+        </div>
+        <div class="toolbar" style="margin:0">
+          <button class="btn btn-primary" id="btn-bot-start">▶ Start Bot</button>
+          <button class="btn btn-danger" id="btn-bot-stop">⏹ Stop Bot</button>
+          <button class="btn btn-secondary" id="btn-bot-reconnect">🔄 Reconnect</button>
+        </div>
       </div>
-      <div id="kmsg"></div>
-      <div class="card">
-        <h3>Ticket buttons</h3>
-        <p class="muted">IDs must look like <span class="mono">ticket_name</span>. Buttons reflow automatically on the ticket panel.</p>
-        <div class="table-scroll"><table><thead><tr><th>ID</th><th>Label</th><th>Emoji</th><th>Style</th><th>Prompt</th><th></th></tr></thead><tbody id="ttypes"></tbody></table></div>
-        <div class="toolbar"><button class="btn btn-secondary" id="t-add">+ Add ticket type</button></div>
-      </div>
-      <div class="section card">
-        <h3>Message panels</h3>
-        <p class="muted">Updated in place when you save. Channel mentions are appended automatically if missing.</p>
-        <div id="panels"></div>
-      </div>
-    </section>
 
-    <!-- SETTINGS -->
-    <section class="view" id="view-settings">
-      <div class="section-head"><h2>Settings</h2></div>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
+        <!-- Connection Settings Card -->
         <div class="card">
-          <h3>Bot connection</h3>
-          <div class="kv" id="setenv"></div>
+          <h3>Connection Profile</h3>
+          <p class="muted">Settings used when spawning the bot on the target server.</p>
+          <div id="bot-config-msg"></div>
+
+          <div class="field">
+            <label for="mc-host">Server Address (Host:Port)</label>
+            <input type="text" id="mc-host" placeholder="donutsmp.net:25565" value="donutsmp.net:25565">
+          </div>
+
+          <div class="form-row">
+            <div class="field">
+              <label for="mc-username">Bot Username / Email</label>
+              <input type="text" id="mc-username" placeholder="Minecraft username">
+            </div>
+            <div class="field">
+              <label for="mc-auth">Auth Type</label>
+              <select id="mc-auth">
+                <option value="microsoft">Microsoft Account</option>
+                <option value="easymc">EasyMC Token</option>
+                <option value="offline">Offline / Cracked</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="field">
+              <label for="mc-version">Version</label>
+              <input type="text" id="mc-version" value="1.20.4">
+            </div>
+            <div class="field">
+              <label for="mc-joindelay">Join Delay (ms)</label>
+              <input type="number" id="mc-joindelay" value="1000" min="0" step="500">
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" id="btn-save-bot-config">Save Connection Settings</button>
         </div>
+
+        <!-- Safety & Automation Settings Card -->
         <div class="card">
-          <h3>Change admin password</h3>
-          <p class="muted" id="pw-note">Only available when login is stored in data/admin.json.</p>
-          <div id="pwmsg"></div>
-          <div class="field"><label>Current password</label><input type="password" id="pw-cur" autocomplete="current-password"></div>
-          <div class="field"><label>New username (optional)</label><input type="text" id="pw-user" maxlength="64"></div>
-          <div class="field"><label>New password (min 10 chars)</label><input type="password" id="pw-new" autocomplete="new-password"></div>
-          <button class="btn btn-primary" id="pw-save">Update credentials</button>
+          <h3>Delivery Safety &amp; Anti-AFK</h3>
+          <p class="muted">Protection parameters to ensure items and bots remain safe.</p>
+
+          <div class="field">
+            <label for="mc-safe-cmd">Emergency Return Command</label>
+            <input type="text" id="mc-safe-cmd" value="/home" placeholder="/home">
+            <div class="hint">Executed if players get too close or after delivering.</div>
+          </div>
+
+          <div class="form-row">
+            <div class="field">
+              <label for="mc-safety-radius">Safety Radius (Blocks)</label>
+              <input type="number" id="mc-safety-radius" value="5" min="1" max="30">
+            </div>
+            <div class="field">
+              <label for="mc-tpa-timeout">TPA Timeout (Seconds)</label>
+              <input type="number" id="mc-tpa-timeout" value="45" min="10" max="180">
+            </div>
+          </div>
+
+          <div class="field" style="margin-top:10px">
+            <label class="checkbox-label">
+              <input type="checkbox" id="mc-antiafk-toggle" checked>
+              <span>Enable Anti-AFK (randomized jumping, arm swings and subtle rotations)</span>
+            </label>
+          </div>
+          <div class="field">
+            <label class="checkbox-label">
+              <input type="checkbox" id="mc-autoreconnect-toggle" checked>
+              <span>Auto-reconnect if server kicks or restarts</span>
+            </label>
+          </div>
         </div>
       </div>
+
+      <!-- Live Terminal Console & In-Game Command Dispatcher -->
       <div class="section card">
-        <h3>Security notes</h3>
-        <p class="muted" style="margin:0">Passwords are stored as scrypt hashes (never plain text). Login is rate-limited (8 tries / 10 min), sessions are HttpOnly + SameSite=Lax cookies expiring after 12h, and all mutations require a CSRF token. Serve this dashboard behind HTTPS and keep it off the public internet if possible.</p>
+        <div class="card-header-flex">
+          <div>
+            <h3>Live Minecraft Bot Console &amp; Chat</h3>
+            <span class="muted" style="margin:0">Real-time SSE events from mineflayer bot session</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="btn-clear-bot-logs">Clear Console</button>
+        </div>
+
+        <div class="terminal-box" id="bot-live-terminal">
+          <div class="terminal-line text-muted">[Console] Connected to live event stream. Waiting for bot activity...</div>
+        </div>
+
+        <form id="bot-chat-form" class="chat-sender-form">
+          <input type="text" id="bot-chat-input" placeholder="Type in-game chat or command (e.g. /home, /tpa, /balance)…" autocomplete="off">
+          <button type="submit" class="btn btn-primary" id="btn-send-chat">Send to Minecraft</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 4. DISCORD BOT VIEW -->
+    <section class="view" id="view-discord">
+      <div class="section-head">
+        <div>
+          <h2>Bluxbot Discord Server Management</h2>
+          <p class="muted" style="margin:2px 0 0">Role hierarchies, channel mappings, ticket panels and instant synchronization</p>
+        </div>
+        <div class="toolbar" style="margin:0">
+          <button class="btn btn-primary" id="btn-discord-sync-now">
+            <span>⚡</span> Sync Server Live
+          </button>
+        </div>
+      </div>
+
+      <div class="subnav-tabs">
+        <button class="subnav-btn active" data-sub="sub-servers">Guilds &amp; Channels</button>
+        <button class="subnav-btn" data-sub="sub-template">Roles &amp; Categories</button>
+        <button class="subnav-btn" data-sub="sub-tickets">Tickets &amp; Panels</button>
+        <button class="subnav-btn" data-sub="sub-credentials">Bot Token Config</button>
+      </div>
+
+      <!-- Subview 1: Guilds & Mappings -->
+      <div class="subview active" id="sub-servers">
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
+          <div class="card">
+            <h3>Connected Guilds</h3>
+            <p class="muted">Select a guild to customize channel mappings.</p>
+            <div class="list" id="guildlist">
+              <div class="empty">No guilds synced yet.</div>
+            </div>
+          </div>
+          <div class="card">
+            <h3 id="gtitle">Guild Configuration</h3>
+            <p class="muted" id="gsub">Select a server to edit mappings</p>
+            <div id="gform" style="display:none">
+              <div class="field">
+                <label>Welcome Channel</label>
+                <select id="f-welcome"></select>
+              </div>
+              <div class="field">
+                <label>Audit / Mod Log Channel</label>
+                <select id="f-log"></select>
+              </div>
+              <div class="field">
+                <label>Ticket Category ID</label>
+                <input type="text" id="f-cat" maxlength="32">
+              </div>
+              <div class="field">
+                <label>Default Member Auto-Role</label>
+                <select id="f-role"></select>
+              </div>
+              <div class="toolbar">
+                <button class="btn btn-primary" id="gsave">Save Mappings</button>
+              </div>
+              <div id="gmsg" style="margin-top:10px"></div>
+            </div>
+            <div class="section" id="gdetail"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subview 2: Roles & Channels Template -->
+      <div class="subview" id="sub-template">
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h3>Roles Hierarchy Template</h3>
+              <p class="muted">Top-to-bottom role order and permissions applied to all servers.</p>
+            </div>
+            <div class="toolbar" style="margin:0">
+              <button class="btn btn-secondary btn-sm" id="t-reset">Restore Defaults</button>
+              <button class="btn btn-primary btn-sm" id="t-save">Save Template</button>
+            </div>
+          </div>
+          <div id="tmsg" style="margin:8px 0"></div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Role Name</th>
+                  <th>Color (Hex)</th>
+                  <th>Granted Permissions</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="roles"></tbody>
+            </table>
+          </div>
+          <div class="toolbar">
+            <button class="btn btn-secondary btn-sm" id="role-add">+ Add Role</button>
+          </div>
+        </div>
+
+        <div class="section card">
+          <h3>Server Category &amp; Channel Structure</h3>
+          <p class="muted">Special channel keys: <span class="mono">welcome</span>, <span class="mono">rules</span>, <span class="mono">tickets</span>, <span class="mono">ticketlogs</span>, <span class="mono">modlog</span>, <span class="mono">staff</span>, <span class="mono">review_submit</span>, <span class="mono">review_display</span>.</p>
+          <div id="cats"></div>
+          <div class="toolbar">
+            <button class="btn btn-secondary btn-sm" id="cat-add">+ Add Category</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subview 3: Tickets & Message Panels -->
+      <div class="subview" id="sub-tickets">
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h3>Support Ticket Buttons</h3>
+              <p class="muted">Configured buttons that appear on the support panel</p>
+            </div>
+            <button class="btn btn-primary btn-sm" id="k-save">Save Tickets &amp; Panels</button>
+          </div>
+          <div id="kmsg" style="margin:8px 0"></div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Button Label</th>
+                  <th>Emoji</th>
+                  <th>Style</th>
+                  <th>Ticket Prompt Text</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="ttypes"></tbody>
+            </table>
+          </div>
+          <div class="toolbar">
+            <button class="btn btn-secondary btn-sm" id="t-add">+ Add Ticket Type</button>
+          </div>
+        </div>
+
+        <div class="section card">
+          <h3>Permanent Embed Message Panels</h3>
+          <p class="muted">Panels posted automatically in rules, welcome, reviews and support channels.</p>
+          <div id="panels"></div>
+        </div>
+      </div>
+
+      <!-- Subview 4: Bot Credentials & Tokens -->
+      <div class="subview" id="sub-credentials">
+        <div class="card" style="max-width:680px">
+          <h3>Discord Bot API Credentials</h3>
+          <p class="muted">Credentials can be updated live without restarting the Wispbyte container.</p>
+          <div id="dc-creds-msg"></div>
+
+          <div class="field">
+            <label for="dc-token-input">Discord Bot Token</label>
+            <input type="password" id="dc-token-input" placeholder="MTAyND...">
+          </div>
+
+          <div class="form-row">
+            <div class="field">
+              <label for="dc-clientid-input">Client Application ID</label>
+              <input type="text" id="dc-clientid-input" placeholder="10245...">
+            </div>
+            <div class="field">
+              <label for="dc-guildid-input">Target / Dev Guild ID</label>
+              <input type="text" id="dc-guildid-input" placeholder="10245...">
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="btn-save-discord-creds">Save Credentials &amp; Connect Bot</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. SECURITY & SETTINGS VIEW -->
+    <section class="view" id="view-settings">
+      <div class="section-head">
+        <div>
+          <h2>Security &amp; Console Configuration</h2>
+          <p class="muted" style="margin:2px 0 0">Session authentication, password management, and security controls</p>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
+        <!-- Change Password Card -->
+        <div class="card">
+          <h3>Change Admin Password</h3>
+          <p class="muted">Update dashboard login password with scrypt encryption.</p>
+          <div id="pwmsg"></div>
+
+          <div class="field">
+            <label for="pw-cur">Current Password</label>
+            <input type="password" id="pw-cur" autocomplete="current-password" placeholder="••••••••••">
+          </div>
+          <div class="field">
+            <label for="pw-user">New Admin Username (optional)</label>
+            <input type="text" id="pw-user" placeholder="admin" maxlength="64">
+          </div>
+          <div class="field">
+            <label for="pw-new">New Password (min 10 characters)</label>
+            <input type="password" id="pw-new" autocomplete="new-password" placeholder="••••••••••••">
+          </div>
+
+          <button class="btn btn-primary" id="pw-save">Update Credentials</button>
+        </div>
+
+        <!-- Connection Environment Info -->
+        <div class="card">
+          <h3>System &amp; Environment Inspection</h3>
+          <p class="muted">Masked connection details running on this server.</p>
+          <div class="kv" id="setenv">
+            <div><small>Web Port</small><code class="mono" id="env-port">0.0.0.0:9843</code></div>
+            <div><small>Minecraft Target</small><code class="mono" id="env-mc">donutsmp.net:25565</code></div>
+            <div><small>Active Sessions</small><code class="mono" id="env-sessions">1 Active</code></div>
+            <div><small>Uptime</small><code class="mono" id="env-uptime">0m</code></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Security Hardening Details -->
+      <div class="section card">
+        <h3>Security &amp; Hardening Verification</h3>
+        <div class="security-checklist">
+          <div class="check-item"><span class="check-icon">✓</span><div><strong>Session Protection:</strong> HttpOnly, SameSite=Lax cookies with automatic 12-hour expiration.</div></div>
+          <div class="check-item"><span class="check-icon">✓</span><div><strong>CSRF Defense:</strong> Cryptographic token validation required on all state-modifying requests.</div></div>
+          <div class="check-item"><span class="check-icon">✓</span><div><strong>Rate Limiting:</strong> In-memory login throttling (max 8 attempts per IP/username per 10-minute window).</div></div>
+          <div class="check-item"><span class="check-icon">✓</span><div><strong>Content Security Policy:</strong> Directives restrict script sources to self and block frame-ancestors to prevent clickjacking.</div></div>
+          <div class="check-item"><span class="check-icon">✓</span><div><strong>No Raw Desktop Leaks:</strong> Native responsive web architecture served strictly over HTTP.</div></div>
+        </div>
       </div>
     </section>
   </main>
 </div>
+
+<!-- CREATE MANUAL ORDER MODAL -->
+<div class="modal-overlay" id="create-order-modal" style="display:none">
+  <div class="modal-card">
+    <div class="card-header-flex">
+      <h3>Create In-Game Delivery Order</h3>
+      <button class="btn btn-ghost btn-sm" id="btn-close-order-modal">✕</button>
+    </div>
+    <p class="muted">Manually dispatch a delivery order to the Minecraft bot.</p>
+    <div id="modal-order-msg"></div>
+
+    <form id="manual-order-form">
+      <div class="field">
+        <label for="order-modal-recipient">Buyer Minecraft IGN *</label>
+        <input type="text" id="order-modal-recipient" required placeholder="e.g. RattlesHyper" maxlength="32">
+      </div>
+
+      <div class="form-row">
+        <div class="field">
+          <label for="order-modal-money">In-Game Money ($)</label>
+          <input type="number" id="order-modal-money" value="0" min="0" step="1000">
+        </div>
+        <div class="field">
+          <label for="order-modal-spawners">Spawner Count</label>
+          <input type="number" id="order-modal-spawners" value="0" min="0">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="order-modal-elytras">Elytra Count</label>
+        <input type="number" id="order-modal-elytras" value="0" min="0">
+      </div>
+
+      <div class="toolbar" style="justify-content:flex-end">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-order-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-order-modal">Queue Delivery</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="toast"></div>
 <script src="/app.js"></script>
 </body>

@@ -506,7 +506,7 @@ async function startScript(username) {
 
 async function exeAll(command) {
   if (!command) return
-  const list = playerList
+  let list = playerList && playerList.length ? playerList : Array.from(activeBots.keys())
   const cmd = command.split(' ')
   if (list.length == 0) return notify('Error', 'No bots selected', 'error')
   for (let i = 0; i < list.length; i++) {
@@ -1080,6 +1080,8 @@ function newBot(options) {
 // =============================================================================
 // 4. BLUXBOT DISCORD BOT ENGINE (bluxbot-deploy-safe integrated on same server)
 // =============================================================================
+process.env.DASHBOARD_ENABLED = 'false' // Unified dashboard runs directly on primary Wispbyte port
+
 const {
   startOrRestartDiscordBot,
   syncAllDiscordGuildsNow,
@@ -1112,6 +1114,7 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
   onStatusChange: async (order) => {
     const botName = getPrimaryDeliveryBot()?._client?.username || 'Bluxmart'
     sendEvent(botName, 'chat', `[Bluxmart] Order ${order.id} (${order.recipient}) -> ${order.status.toUpperCase()}`)
+    broadcastToRenderer('delivery_status', order.id, order.recipient, order.status)
     await reportStatusToBluxmart(order)
     await notifyDiscordOrder(order)
   }
@@ -1180,11 +1183,86 @@ setInterval(syncWithBluxmartCloud, 5000)
 setTimeout(syncWithBluxmartCloud, 1500)
 
 // =============================================================================
-// 6. NATIVE HTTP WEB SERVER (Serves Full TrafficerMC + Bluxmart + Discord UI)
+// 6. NATIVE HTTP WEB SERVER (Serves Unified TrafficerMC + Bluxmart + Discord UI)
 // =============================================================================
-const rendererDir = fs.existsSync(path.join(__dirname, 'renderer'))
-  ? path.join(__dirname, 'renderer')
-  : path.resolve(__dirname, '../out/renderer')
+const {
+  SessionStore,
+  LoginRateLimiter,
+  resolveAdminCredentials,
+  verifyPassword,
+  hashPassword,
+  saveAdminFile
+} = require('./discord-bot/dist/auth.js')
+const { getGuildSetup, saveGuildSetup } = require('./discord-bot/dist/store.js')
+const { getTemplate, saveTemplate, validateTemplate, DEFAULT_TEMPLATE } = require('./discord-bot/dist/botConfig.js')
+
+function crypto_tsafeEqual(a, b) {
+  const ab = Buffer.from(String(a || ''), 'utf-8')
+  const bb = Buffer.from(String(b || ''), 'utf-8')
+  const len = Math.max(ab.length, bb.length, 1)
+  const aPad = Buffer.alloc(len, 0)
+  const bPad = Buffer.alloc(len, 0)
+  ab.copy(aPad)
+  bb.copy(bPad)
+  try {
+    return crypto.timingSafeEqual(aPad, bPad) && ab.length === bb.length
+  } catch {
+    return a === b
+  }
+}
+
+async function readAllGuilds() {
+  try {
+    const raw = await fs.promises.readFile(path.join(process.cwd(), 'data', 'guilds.json'), 'utf-8')
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
+const sessions = new SessionStore()
+const limiter = new LoginRateLimiter()
+const SESSION_COOKIE = 'blux_session'
+
+// Automatically ensure admin credentials exist
+;(async () => {
+  try {
+    const creds = await resolveAdminCredentials()
+    if (!creds) {
+      const h = hashPassword('bluxmart2026!')
+      await saveAdminFile('admin', h)
+      console.log('[Security] Initialized default credentials (user: "admin", pass: "bluxmart2026!"). Change password in Security tab.')
+    }
+  } catch (err) {
+    console.warn('[Security] Could not verify/initialize admin credentials:', err.message)
+  }
+})()
+
+function parseCookies(header) {
+  const out = {}
+  if (!header) return out
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=')
+    if (i < 0) continue
+    const k = part.slice(0, i).trim()
+    const v = part.slice(i + 1).trim()
+    if (k) out[k] = decodeURIComponent(v)
+  }
+  return out
+}
+
+function getSession(req) {
+  const cookies = parseCookies(req.headers.cookie)
+  return sessions.get(cookies[SESSION_COOKIE])
+}
+
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for']
+  if (typeof fwd === 'string' && fwd.length > 0) return fwd.split(',')[0].trim().slice(0, 64)
+  return (req.socket?.remoteAddress || 'unknown').slice(0, 64)
+}
+
+const rendererDir = path.join(__dirname, 'dashboard', 'public')
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -1194,6 +1272,7 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
   '.woff2': 'font/woff2'
 }
 
@@ -1217,7 +1296,138 @@ const handleHttpRequest = async (req, res) => {
   const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const pathname = decodeURIComponent(urlObj.pathname)
 
-  if (req.method === 'GET' && pathname === '/api/ipc/events') {
+  // Security headers on all HTTP responses
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'no-referrer')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  )
+
+  // 1. Static Login Page (GET /login)
+  if (req.method === 'GET' && pathname === '/login') {
+    if (getSession(req)) {
+      res.writeHead(302, { Location: '/' })
+      return res.end()
+    }
+    const loginPath = path.join(rendererDir, 'login.html')
+    if (fs.existsSync(loginPath)) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return fs.createReadStream(loginPath).pipe(res)
+    }
+  }
+
+  // 2. Authentication Actions
+  if (req.method === 'POST' && pathname === '/login') {
+    const ip = clientIp(req)
+    const body = await readJsonBody(req)
+    const username = typeof body.username === 'string' ? body.username.trim().slice(0, 64) : ''
+    const password = typeof body.password === 'string' ? body.password : ''
+    const key = `${ip}|${username.toLowerCase()}`
+    const check = limiter.check(key)
+    if (!check.allowed) {
+      res.setHeader('Retry-After', String(check.retryAfterSec))
+      return sendJson(res, 429, { error: `Too many attempts. Try again in ${Math.ceil(check.retryAfterSec / 60)} min.` })
+    }
+    if (!username || !password) {
+      limiter.recordFailure(key)
+      return sendJson(res, 400, { error: 'Username and password are required.' })
+    }
+    const creds = await resolveAdminCredentials()
+    if (!creds) {
+      return sendJson(res, 503, { error: 'No admin credentials configured.' })
+    }
+    const userOk = crypto_tsafeEqual(username, creds.username)
+    const passOk = verifyPassword(password, creds.passHash)
+    if (!userOk || !passOk) {
+      limiter.recordFailure(key)
+      await delay(600)
+      return sendJson(res, 401, { error: 'Invalid username or password.' })
+    }
+    limiter.recordSuccess(key)
+    const s = sessions.create(creds.username, ip)
+    const isHttps = req.headers['x-forwarded-proto']?.includes('https') || false
+    const cookie = [
+      `${SESSION_COOKIE}=${encodeURIComponent(s.token)}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${12 * 60 * 60}`,
+      ...(isHttps ? ['Secure'] : [])
+    ].join('; ')
+    res.setHeader('Set-Cookie', cookie)
+    return sendJson(res, 200, { ok: true, csrf: s.csrf })
+  }
+
+  if (req.method === 'POST' && pathname === '/logout') {
+    const cookies = parseCookies(req.headers.cookie)
+    sessions.destroy(cookies[SESSION_COOKIE])
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+    return sendJson(res, 200, { ok: true })
+  }
+
+  // 3. Static Assets (CSS, JS, images, fonts)
+  const isStaticAsset =
+    pathname === '/styles.css' ||
+    pathname === '/app.js' ||
+    pathname === '/login.js' ||
+    pathname.startsWith('/assets/') ||
+    pathname.endsWith('.svg') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.jpg') ||
+    pathname.endsWith('.ico') ||
+    pathname.endsWith('.woff2')
+  if (isStaticAsset) {
+    const safePath = path.normalize(path.join(rendererDir, pathname))
+    if (safePath.startsWith(rendererDir) && fs.existsSync(safePath) && fs.statSync(safePath).isFile()) {
+      const ext = path.extname(safePath).toLowerCase()
+      res.writeHead(200, {
+        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=3600'
+      })
+      return fs.createReadStream(safePath).pipe(res)
+    }
+  }
+
+  // 4. Cloud Auto-Delivery Webhook (External API with Secret Header)
+  if (req.method === 'POST' && pathname === '/api/deliver') {
+    const secret = req.headers['x-webhook-secret'] || req.headers['x-api-key']
+    const hasValidSecret = secret && secret === SYNC_SECRET
+    const session = getSession(req)
+    if (!hasValidSecret && !session) {
+      return sendJson(res, 401, { error: 'Unauthorized webhook call' })
+    }
+    const body = await readJsonBody(req)
+    const { id, recipient, money = 0, spawners = 0, elytras = 0 } = body || {}
+    if (!recipient || typeof recipient !== 'string') {
+      return sendJson(res, 400, { error: 'Missing or invalid Minecraft recipient username' })
+    }
+    const order = queueManager.enqueue({ id, recipient: recipient.trim(), money, spawners, elytras })
+    await notifyDiscordOrder(order)
+    broadcastToRenderer('delivery_status', order.id, order.recipient, 'queued')
+    return sendJson(res, 202, { ok: true, message: 'Order added to delivery queue', order })
+  }
+
+  // 5. Auth Middleware for Dashboard Root & API
+  const session = getSession(req)
+
+  // SPA Root Page Gate
+  if (pathname === '/' || pathname === '/index.html') {
+    if (!session) {
+      res.writeHead(302, { Location: '/login' })
+      return res.end()
+    }
+    const indexPath = path.join(rendererDir, 'index.html')
+    if (fs.existsSync(indexPath)) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      return fs.createReadStream(indexPath).pipe(res)
+    }
+  }
+
+  // Real-Time Events (SSE)
+  if (req.method === 'GET' && (pathname === '/api/ipc/events' || pathname === '/api/events')) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -1228,127 +1438,283 @@ const handleHttpRequest = async (req, res) => {
     return
   }
 
-  if (req.method === 'POST' && pathname === '/api/ipc/send') {
-    const body = await readJsonBody(req)
-    const { channel, args = [] } = body || {}
-    if (!channel) return sendJson(res, 400, { error: 'Missing IPC channel' })
-    ipcMain.emit(channel, { sender: mainWindow.webContents }, ...args)
-    return sendJson(res, 200, { ok: true })
-  }
-
-  if (req.method === 'GET' && pathname === '/api/status') {
-    const primaryBot = getPrimaryDeliveryBot()
-    return sendJson(res, 200, {
-      ok: true,
-      bot: {
-        connected: Boolean(primaryBot && primaryBot.entity),
-        username: primaryBot?._client?.username || primaryBot?.username || null,
-        activeCount: activeBots.size,
-        activeUsernames: Array.from(activeBots.keys()),
-        host: storeinfo().value.server || 'donutsmp.net:25565'
-      },
-      sync: {
-        siteUrl: BLUXMART_SITE_URL,
-        lastSyncAt: lastSyncTime,
-        lastError: lastSyncError
-      },
-      discord: getDiscordBotStatus(),
-      queue: queueManager.queue
-    })
-  }
-
-  if (req.method === 'POST' && pathname === '/api/discord/config') {
-    const body = await readJsonBody(req)
-    if (body.token) store.set('discord.token', String(body.token).trim())
-    if (body.clientId !== undefined) store.set('discord.clientId', String(body.clientId).trim())
-    if (body.guildId !== undefined) store.set('discord.guildId', String(body.guildId).trim())
-    const result = await startOrRestartDiscordBot({
-      token: store.get('discord.token') || process.env.DISCORD_TOKEN || '',
-      clientId: store.get('discord.clientId') || process.env.CLIENT_ID || '',
-      guildId: store.get('discord.guildId') || process.env.GUILD_ID || ''
-    })
-    return sendJson(res, 200, { ...result, discord: getDiscordBotStatus() })
-  }
-
-  if (req.method === 'POST' && pathname === '/api/discord/sync') {
-    const result = await syncAllDiscordGuildsNow()
-    return sendJson(res, 200, { ...result, discord: getDiscordBotStatus() })
-  }
-
-  if (req.method === 'POST' && pathname === '/api/sync-now') {
-    await syncWithBluxmartCloud()
-    return sendJson(res, 200, { ok: true, lastSyncAt: lastSyncTime, lastError: lastSyncError })
-  }
-
-  if (req.method === 'POST' && pathname === '/api/deliver') {
-    const body = await readJsonBody(req)
-    const { id, recipient, money = 0, spawners = 0, elytras = 0 } = body || {}
-    if (!recipient || typeof recipient !== 'string') {
-      return sendJson(res, 400, { error: 'Missing or invalid Minecraft recipient username' })
+  // All /api/ routes require authentication
+  if (pathname.startsWith('/api/')) {
+    if (!session) {
+      return sendJson(res, 401, { error: 'Not authenticated' })
     }
-    const order = queueManager.enqueue({ id, recipient: recipient.trim(), money, spawners, elytras })
-    await notifyDiscordOrder(order)
-    return sendJson(res, 202, { ok: true, message: 'Order added to delivery queue', order })
-  }
+    sessions.refresh(session)
 
-  if (req.method === 'POST' && pathname === '/api/order/action') {
-    const body = await readJsonBody(req)
-    const { id, action } = body || {}
-    const idx = queueManager.queue.findIndex((o) => o.id === id)
-    if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
-    if (action === 'retry') {
+    // CSRF protection for mutating actions
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+      const csrfSent = req.headers['x-csrf-token']
+      if (!csrfSent || csrfSent !== session.csrf) {
+        return sendJson(res, 403, { error: 'Invalid or missing CSRF token. Refresh and try again.' })
+      }
+    }
+
+    if (req.method === 'GET' && pathname === '/api/me') {
+      return sendJson(res, 200, { username: session.username, csrf: session.csrf })
+    }
+
+    if (req.method === 'GET' && pathname === '/api/status') {
+      const primaryBot = getPrimaryDeliveryBot()
+      return sendJson(res, 200, {
+        ok: true,
+        bot: {
+          connected: Boolean(primaryBot && primaryBot.entity),
+          username: primaryBot?._client?.username || primaryBot?.username || null,
+          activeCount: activeBots.size,
+          activeUsernames: Array.from(activeBots.keys()),
+          host: storeinfo().value.server || 'donutsmp.net:25565',
+          version: storeinfo().value.version || '1.20.4'
+        },
+        sync: {
+          siteUrl: BLUXMART_SITE_URL,
+          lastSyncAt: lastSyncTime,
+          lastError: lastSyncError
+        },
+        discord: getDiscordBotStatus(),
+        queue: queueManager.queue
+      })
+    }
+
+    if (req.method === 'GET' && pathname === '/api/orders') {
+      return sendJson(res, 200, { ok: true, queue: queueManager.queue })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/orders/retry') {
+      const body = await readJsonBody(req)
+      const idx = queueManager.queue.findIndex((o) => o.id === body.id)
+      if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
       queueManager.queue[idx].status = 'queued'
       queueManager.queue[idx].error = null
       queueManager.saveQueue()
       queueManager.processNext()
-    } else if (action === 'delete') {
-      queueManager.queue.splice(idx, 1)
-      queueManager.saveQueue()
-    } else if (action === 'complete') {
+      broadcastToRenderer('delivery_status', body.id, queueManager.queue[idx].recipient, 'queued')
+      return sendJson(res, 200, { ok: true, queue: queueManager.queue })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/orders/complete') {
+      const body = await readJsonBody(req)
+      const idx = queueManager.queue.findIndex((o) => o.id === body.id)
+      if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
       queueManager.queue[idx].status = 'completed'
       queueManager.saveQueue()
       reportStatusToBluxmart(queueManager.queue[idx])
       notifyDiscordOrder(queueManager.queue[idx])
+      broadcastToRenderer('delivery_status', body.id, queueManager.queue[idx].recipient, 'completed')
+      return sendJson(res, 200, { ok: true, queue: queueManager.queue })
     }
-    return sendJson(res, 200, { ok: true, queue: queueManager.queue })
+
+    if (req.method === 'POST' && pathname === '/api/orders/delete') {
+      const body = await readJsonBody(req)
+      const idx = queueManager.queue.findIndex((o) => o.id === body.id)
+      if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
+      queueManager.queue.splice(idx, 1)
+      queueManager.saveQueue()
+      return sendJson(res, 200, { ok: true, queue: queueManager.queue })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/orders/manual') {
+      const body = await readJsonBody(req)
+      const { recipient, money = 0, spawners = 0, elytras = 0 } = body || {}
+      if (!recipient || typeof recipient !== 'string') {
+        return sendJson(res, 400, { error: 'Recipient username is required' })
+      }
+      const order = queueManager.enqueue({ recipient: recipient.trim(), money, spawners, elytras })
+      await notifyDiscordOrder(order)
+      broadcastToRenderer('delivery_status', order.id, order.recipient, 'queued')
+      return sendJson(res, 200, { ok: true, order, queue: queueManager.queue })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/sync-now') {
+      await syncWithBluxmartCloud()
+      return sendJson(res, 200, { ok: true, lastSyncAt: lastSyncTime, lastError: lastSyncError })
+    }
+
+    // Minecraft Bot Controls
+    if (req.method === 'POST' && pathname === '/api/bot/action') {
+      const body = await readJsonBody(req)
+      const action = body?.action
+      if (action === 'start') {
+        connectBot()
+        broadcastToRenderer('bot_action', 'Starting bot connection...')
+      } else if (action === 'stop') {
+        stopBot = true
+        exeAll('disconnect')
+        broadcastToRenderer('bot_action', 'Disconnected bot.')
+      } else if (action === 'reconnect') {
+        stopBot = false
+        exeAll('disconnect')
+        setTimeout(() => connectBot(), 2000)
+        broadcastToRenderer('bot_action', 'Reconnecting bot in 2s...')
+      } else {
+        return sendJson(res, 400, { error: `Unknown bot action: ${action}` })
+      }
+      return sendJson(res, 200, { ok: true, action })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/chat') {
+      const body = await readJsonBody(req)
+      const msg = String(body?.message || '').trim()
+      if (!msg) return sendJson(res, 400, { error: 'Message cannot be empty' })
+      const primaryBot = getPrimaryDeliveryBot()
+      if (primaryBot && primaryBot.chat) {
+        primaryBot.chat(msg)
+        sendEvent(primaryBot._client?.username || 'Bot', 'chat', msg)
+      } else {
+        exeAll('chat ' + msg)
+      }
+      return sendJson(res, 200, { ok: true, message: msg })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/config') {
+      const body = await readJsonBody(req)
+      if (body.host) store.set('config.value.server', String(body.host).trim())
+      if (body.version) store.set('config.value.version', String(body.version).trim())
+      if (body.authType) store.set('config.value.authType', String(body.authType).trim())
+      if (body.antiAfk !== undefined) {
+        store.set('config.boolean.antiAfk', Boolean(body.antiAfk))
+        if (body.antiAfk) {
+          exeAll('afkon')
+        } else {
+          exeAll('afkoff')
+        }
+      }
+      return sendJson(res, 200, { ok: true, config: storeinfo() })
+    }
+
+    // Discord Bot Controls
+    if (req.method === 'POST' && pathname === '/api/discord/config') {
+      const body = await readJsonBody(req)
+      if (body.token) store.set('discord.token', String(body.token).trim())
+      if (body.clientId !== undefined) store.set('discord.clientId', String(body.clientId).trim())
+      if (body.guildId !== undefined) store.set('discord.guildId', String(body.guildId).trim())
+      const result = await startOrRestartDiscordBot({
+        token: store.get('discord.token') || process.env.DISCORD_TOKEN || '',
+        clientId: store.get('discord.clientId') || process.env.CLIENT_ID || '',
+        guildId: store.get('discord.guildId') || process.env.GUILD_ID || ''
+      })
+      return sendJson(res, 200, { ...result, discord: getDiscordBotStatus() })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/discord/sync') {
+      const result = await syncAllDiscordGuildsNow()
+      return sendJson(res, 200, { ...result, discord: getDiscordBotStatus() })
+    }
+
+    if (req.method === 'GET' && pathname === '/api/guilds') {
+      const all = await readAllGuilds()
+      const list = Object.values(all)
+      return sendJson(res, 200, {
+        guilds: list.map((g) => ({
+          guildId: g['guildId'],
+          roles: Object.keys(g['roles'] ?? {}).length,
+          channels: Object.keys(g['channels'] ?? {}).length,
+          updatedAt: g['updatedAt'] ?? null,
+          liveName: g['name'] || g['guildId']
+        }))
+      })
+    }
+
+    if (req.method === 'GET' && pathname.startsWith('/api/guilds/')) {
+      const id = pathname.replace('/api/guilds/', '').trim()
+      const setup = await getGuildSetup(id).catch(() => null)
+      if (!setup) return sendJson(res, 404, { error: 'Guild not found or not synced yet' })
+      return sendJson(res, 200, { guild: setup })
+    }
+
+    if (req.method === 'PUT' && pathname.startsWith('/api/guilds/')) {
+      const id = pathname.replace('/api/guilds/', '').trim()
+      const setup = await getGuildSetup(id).catch(() => null)
+      if (!setup) return sendJson(res, 404, { error: 'Guild not found' })
+      const b = await readJsonBody(req)
+      const channelIds = new Set(Object.values(setup.channels || {}))
+      const roleIds = new Set(Object.values(setup.roles || {}))
+      const pick = (v, allowed, label) => {
+        if (v === undefined || v === null || v === '') return undefined
+        if (typeof v !== 'string' || !allowed.has(v)) throw new Error(`${label}: unknown ID for this server.`)
+        return v
+      }
+      try {
+        const welcomeChannelId = pick(b.welcomeChannelId ?? setup.welcomeChannelId, channelIds, 'Welcome channel') ?? setup.welcomeChannelId
+        const logChannelId = pick(b.logChannelId ?? setup.logChannelId, channelIds, 'Log channel') ?? setup.logChannelId
+        const ticketCategoryId = b.ticketCategoryId === undefined || b.ticketCategoryId === '' ? setup.ticketCategoryId : b.ticketCategoryId
+        const autoRoleId = pick(b.autoRoleId ?? setup.autoRoleId, roleIds, 'Auto-role') ?? setup.autoRoleId
+        const updated = { ...setup, welcomeChannelId, logChannelId, ticketCategoryId, autoRoleId, updatedAt: new Date().toISOString() }
+        await saveGuildSetup(updated)
+        return sendJson(res, 200, { ok: true, guild: updated })
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message || 'Invalid input' })
+      }
+    }
+
+    if (req.method === 'GET' && pathname === '/api/template') {
+      const t = await getTemplate()
+      return sendJson(res, 200, { template: t })
+    }
+
+    if (req.method === 'PUT' && pathname === '/api/template') {
+      const b = await readJsonBody(req)
+      const t = b.template ?? b
+      const v = validateTemplate(t)
+      if (!v.ok) return sendJson(res, 400, { error: v.error })
+      await saveTemplate(t)
+      const syncResult = await syncAllDiscordGuildsNow().catch(() => ({ queued: true }))
+      return sendJson(res, 200, { ok: true, sync: syncResult })
+    }
+
+    if (req.method === 'GET' && pathname === '/api/template/defaults') {
+      return sendJson(res, 200, { template: DEFAULT_TEMPLATE })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/change-password') {
+      const b = await readJsonBody(req)
+      const creds = await resolveAdminCredentials()
+      if (!creds) return sendJson(res, 503, { error: 'No admin credentials configured.' })
+      if (creds.source === 'env') {
+        return sendJson(res, 400, { error: 'Admin login configured via environment variables. Update DASHBOARD_USER in your hosting environment.' })
+      }
+      if (typeof b.currentPassword !== 'string' || !verifyPassword(b.currentPassword, creds.passHash)) {
+        return sendJson(res, 401, { error: 'Current password is incorrect.' })
+      }
+      const newUsername = typeof b.newUsername === 'string' && b.newUsername.trim() ? b.newUsername.trim().slice(0, 64) : creds.username
+      if (typeof b.newPassword !== 'string' || b.newPassword.length < 8 || b.newPassword.length > 200) {
+        return sendJson(res, 400, { error: 'New password must be between 8 and 200 characters.' })
+      }
+      try {
+        const h = hashPassword(b.newPassword)
+        await saveAdminFile(newUsername, h)
+        return sendJson(res, 200, { ok: true })
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message || 'Could not update password' })
+      }
+    }
+
+    // Backward compatibility for IPC send
+    if (req.method === 'POST' && pathname === '/api/ipc/send') {
+      const body = await readJsonBody(req)
+      const { channel, args = [] } = body || {}
+      if (!channel) return sendJson(res, 400, { error: 'Missing IPC channel' })
+      ipcMain.emit(channel, { sender: mainWindow.webContents }, ...args)
+      return sendJson(res, 200, { ok: true })
+    }
+
+    // Unmatched API route
+    return sendJson(res, 404, { error: 'Not found' })
   }
 
-  const relPath = pathname === '/' ? '/index.html' : pathname
-  const safePath = path.normalize(path.join(rendererDir, relPath))
+  // Any other static file in dashboard/public
+  const safePath = path.normalize(path.join(rendererDir, pathname))
   if (safePath.startsWith(rendererDir) && fs.existsSync(safePath) && fs.statSync(safePath).isFile()) {
     const ext = path.extname(safePath).toLowerCase()
     res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' })
-    fs.createReadStream(safePath).pipe(res)
-    return
+    return fs.createReadStream(safePath).pipe(res)
   }
 
-  // 7. Forward Bluxbot Discord Admin Console routes (/discord-admin, /login, /logout, /styles.css, /app.js, /api/me, /api/guilds, /api/template, /api/change-password) to local port 3001 so everything works on a single Wispbyte port!
-  const discordAdminPort = Number(process.env.DASHBOARD_PORT || 3001)
-  const targetPath = pathname === '/discord-admin' || pathname === '/discord-admin/'
-    ? '/'
-    : pathname.startsWith('/discord-admin/')
-      ? pathname.slice('/discord-admin'.length)
-      : pathname
-  const proxyReq = http.request(
-    {
-      hostname: '127.0.0.1',
-      port: discordAdminPort,
-      path: targetPath + (urlObj.search || ''),
-      method: req.method,
-      headers: { ...req.headers, host: `127.0.0.1:${discordAdminPort}` }
-    },
-    (proxyRes) => {
-      const headers = { ...proxyRes.headers }
-      delete headers['content-security-policy']
-      delete headers['x-frame-options']
-      res.writeHead(proxyRes.statusCode || 200, headers)
-      proxyRes.pipe(res)
-    }
-  )
-  proxyReq.on('error', () => {
-    sendJson(res, 404, { error: 'Not Found' })
-  })
-  req.pipe(proxyReq)
+  // Fallback
+  return sendJson(res, 404, { error: 'Not Found' })
 }
 
 const PRIMARY_PORT = Number(process.env.SERVER_PORT || process.env.WEB_PORT || process.env.APP_PORT || process.env.PORT || 9843)
