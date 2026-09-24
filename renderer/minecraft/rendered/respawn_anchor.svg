@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <clipPath id="top"><path d="M32 6 58 19 32 33 6 19Z"/></clipPath>
+    <clipPath id="left"><path d="M6 19 32 33 32 58 6 44Z"/></clipPath>
+    <clipPath id="right"><path d="M32 33 58 19 58 44 32 58Z"/></clipPath>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#000" flood-opacity=".7"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)" shape-rendering="crispEdges">
+    <g clip-path="url(#left)">
+      <image href="../textures/block/respawn_anchor_side0.png" x="5" y="17" width="31" height="43" preserveAspectRatio="none"/>
+      <path d="M6 19 32 33 32 58 6 44Z" fill="#000" opacity=".2"/>
+    </g>
+    <g clip-path="url(#right)">
+      <image href="../textures/block/respawn_anchor_side0.png" x="29" y="17" width="31" height="43" preserveAspectRatio="none"/>
+      <path d="M32 33 58 19 58 44 32 58Z" fill="#000" opacity=".48"/>
+    </g>
+    <g clip-path="url(#top)">
+      <image href="../textures/block/respawn_anchor_top_off.png" x="5" y="4" width="54" height="31" preserveAspectRatio="none"/>
+    </g>
+    <path d="M32 6 58 19 58 44 32 58 6 44 6 19Z" fill="none" stroke="#0a0710" stroke-width="2"/>
+    <path d="M6 19 32 33 58 19M32 33V58" fill="none" stroke="#21122f" stroke-width="1.5"/>
+  </g>
+</svg>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bluxmart Admin</title>
+<link rel="stylesheet" href="/styles.css">
+<meta name="color-scheme" content="light dark">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">B</div>
+      <div class="brand-text"><strong>Bluxmart</strong><span>Bot Admin Console</span></div>
+    </div>
+    <div class="nav-label">Manage</div>
+    <nav id="nav">
+      <button class="nav-btn active" data-view="overview"><span class="ico">◉</span><span class="lbl">Overview</span></button>
+      <button class="nav-btn" data-view="servers"><span class="ico">▦</span><span class="lbl">Servers</span></button>
+      <button class="nav-btn" data-view="template"><span class="ico">⚙</span><span class="lbl">Roles &amp; Channels</span></button>
+      <button class="nav-btn" data-view="tickets"><span class="ico">✉</span><span class="lbl">Tickets &amp; Panels</span></button>
+      <button class="nav-btn" data-view="settings"><span class="ico">●</span><span class="lbl">Settings</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="user-chip">
+        <div class="avatar" id="avatar">A</div>
+        <div class="uinfo"><strong id="uname">…</strong><span>Administrator</span></div>
+      </div>
+      <button class="btn btn-secondary btn-block" id="logout">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="title">Overview</h1>
+        <p id="subtitle">Live bot status and server configuration.</p>
+      </div>
+      <div class="status-pill"><span class="dot" id="dot"></span><span id="botstate">Connecting…</span></div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <section class="view active" id="view-overview">
+      <div class="grid" id="statgrid"></div>
+      <div class="section">
+        <div class="section-head"><h2>Connection</h2></div>
+        <div class="card">
+          <div class="kv" id="envkv"></div>
+          <div class="toolbar">
+            <button class="btn btn-secondary" id="refresh">Refresh status</button>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-head"><h2>Quick guide</h2></div>
+        <div class="card">
+          <p class="muted" style="margin:0">Edit mappings under Servers, the template under Roles &amp; Channels, or ticket buttons and panels under Tickets &amp; Panels. Saving applies changes in place through live sync. Existing resources and message history are preserved; nothing is recreated or cleaned up.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SERVERS -->
+    <section class="view" id="view-servers">
+      <div class="section-head"><h2>Servers</h2><span class="muted" id="guildcount"></span></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
+        <div class="card">
+          <h3>Servers</h3>
+          <p class="muted">Pick a server to edit its channel mappings.</p>
+          <div class="list" id="guildlist"></div>
+        </div>
+        <div class="card">
+          <h3 id="gtitle">Select a server</h3>
+          <p class="muted" id="gsub">Channel IDs must already exist in that server.</p>
+          <div id="gform" style="display:none">
+            <div class="field"><label>Welcome channel ID</label><select id="f-welcome"></select></div>
+            <div class="field"><label>Log channel ID</label><select id="f-log"></select></div>
+            <div class="field"><label>Ticket category ID</label><input type="text" id="f-cat" maxlength="32"></div>
+            <div class="field"><label>Auto-role ID</label><select id="f-role"></select></div>
+            <div class="toolbar">
+              <button class="btn btn-primary" id="gsave">Save mappings</button>
+            </div>
+            <div id="gmsg"></div>
+          </div>
+          <div class="section" id="gdetail"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEMPLATE -->
+    <section class="view" id="view-template">
+      <div class="section-head"><h2>Roles &amp; channels template</h2>
+        <div class="toolbar" style="margin:0">
+          <button class="btn btn-secondary" id="t-reset">Restore defaults</button>
+          <button class="btn btn-primary" id="t-save">Save template</button>
+        </div>
+      </div>
+      <div id="tmsg"></div>
+      <div class="card">
+        <h3>Roles</h3>
+        <p class="muted">Applied in order when you save. Permissions use Discord names like Administrator and ManageMessages.</p>
+        <div class="table-scroll"><table><thead><tr><th>Name</th><th>Color</th><th>Permissions</th><th></th></tr></thead><tbody id="roles"></tbody></table></div>
+        <div class="toolbar"><button class="btn btn-secondary" id="role-add">+ Add role</button></div>
+      </div>
+      <div class="section card">
+        <h3>Categories &amp; channels</h3>
+        <p class="muted">Keys must be unique (a–z, 0–9, _). Special keys: welcome, rules, tickets, ticketlogs, modlog, staff, stock, review_submit, review_display. Removing an item from the template stops managing it but never deletes it from Discord.</p>
+        <div id="cats"></div>
+        <div class="toolbar"><button class="btn btn-secondary" id="cat-add">+ Add category</button></div>
+      </div>
+    </section>
+
+    <!-- TICKETS -->
+    <section class="view" id="view-tickets">
+      <div class="section-head"><h2>Tickets &amp; message panels</h2>
+        <button class="btn btn-primary" id="k-save">Save tickets &amp; panels</button>
+      </div>
+      <div id="kmsg"></div>
+      <div class="card">
+        <h3>Ticket buttons</h3>
+        <p class="muted">IDs must look like <span class="mono">ticket_name</span>. Buttons reflow automatically on the ticket panel.</p>
+        <div class="table-scroll"><table><thead><tr><th>ID</th><th>Label</th><th>Emoji</th><th>Style</th><th>Prompt</th><th></th></tr></thead><tbody id="ttypes"></tbody></table></div>
+        <div class="toolbar"><button class="btn btn-secondary" id="t-add">+ Add ticket type</button></div>
+      </div>
+      <div class="section card">
+        <h3>Message panels</h3>
+        <p class="muted">Updated in place when you save. Channel mentions are appended automatically if missing.</p>
+        <div id="panels"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings">
+      <div class="section-head"><h2>Settings</h2></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
+        <div class="card">
+          <h3>Bot connection</h3>
+          <div class="kv" id="setenv"></div>
+        </div>
+        <div class="card">
+          <h3>Change admin password</h3>
+          <p class="muted" id="pw-note">Only available when login is stored in data/admin.json.</p>
+          <div id="pwmsg"></div>
+          <div class="field"><label>Current password</label><input type="password" id="pw-cur" autocomplete="current-password"></div>
+          <div class="field"><label>New username (optional)</label><input type="text" id="pw-user" maxlength="64"></div>
+          <div class="field"><label>New password (min 10 chars)</label><input type="password" id="pw-new" autocomplete="new-password"></div>
+          <button class="btn btn-primary" id="pw-save">Update credentials</button>
+        </div>
+      </div>
+      <div class="section card">
+        <h3>Security notes</h3>
+        <p class="muted" style="margin:0">Passwords are stored as scrypt hashes (never plain text). Login is rate-limited (8 tries / 10 min), sessions are HttpOnly + SameSite=Lax cookies expiring after 12h, and all mutations require a CSRF token. Serve this dashboard behind HTTPS and keep it off the public internet if possible.</p>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

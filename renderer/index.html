@@ -1,0 +1,1384 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Vizzy / TrafficerMC × Bluxmart Dashboard</title>
+  <style>
+    body.wispbyte-web {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #171c28 0%, #090b10 100%);
+      margin: 0;
+    }
+    body.wispbyte-web .content {
+      border-radius: 14px;
+      box-shadow: 0 25px 70px rgba(0, 0, 0, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+    body.wispbyte-web #minimize,
+    body.wispbyte-web #maximize,
+    body.wispbyte-web #close {
+      display: none;
+    }
+  </style>
+  <script>
+    // Browser IPC Bridge for Wispbyte Node.js Server:
+    // Emulates window.electron.ipcRenderer using Server-Sent Events (/api/ipc/events) + HTTP POST (/api/ipc/send)
+    if (!window.electron) {
+      document.addEventListener('DOMContentLoaded', () => document.body.classList.add('wispbyte-web'));
+      const listeners = new Map();
+      const evtSource = new EventSource('/api/ipc/events');
+      evtSource.onmessage = (e) => {
+        try {
+          const { channel, args } = JSON.parse(e.data);
+          const handlers = listeners.get(channel) || [];
+          handlers.forEach((fn) => fn({}, ...(args || [])));
+        } catch (err) {
+          console.error('[IPC-SSE]', err);
+        }
+      };
+      window.electron = {
+        ipcRenderer: {
+          on(channel, fn) {
+            if (!listeners.has(channel)) listeners.set(channel, []);
+            listeners.get(channel).push(fn);
+          },
+          send(channel, ...args) {
+            fetch('/api/ipc/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ channel, args })
+            }).catch((err) => console.error('[IPC-SEND]', err));
+          }
+        }
+      };
+    }
+  </script>
+  <script type="module" crossorigin src="./assets/index-DfwbBScc.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-C9Wiaw0C.css">
+</head>
+
+<body>
+
+  <div class="content">
+    <div class="window-drag-region drag" aria-hidden="true"></div>
+    <div class="vizzy-brand" aria-label="Vizzy">
+      <span class="vizzy-brand-mark"></span>
+      <strong>Vizzy × Bluxmart</strong>
+    </div>
+    <div class="window-actions">
+      <img id="openSettings" src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20x='0px'%20y='0px'%20width='100'%20height='100'%20viewBox='0,0,256,256'%3e%3cg%20fill='%23ffffff'%20fill-rule='nonzero'%20stroke='none'%20stroke-width='1'%20stroke-linecap='butt'%20stroke-linejoin='miter'%20stroke-miterlimit='10'%20stroke-dasharray=''%20stroke-dashoffset='0'%20font-family='none'%20font-weight='none'%20font-size='none'%20text-anchor='none'%20style='mix-blend-mode:%20normal'%3e%3cg%20transform='scale(5.12,5.12)'%3e%3cpath%20d='M22.20508,2c-0.48953,0.00026%20-0.90693,0.35484%20-0.98633,0.83789l-0.97266,5.95508c-1.16958,0.34023%20-2.28485,0.7993%20-3.33594,1.37109l-4.91406,-3.50977c-0.39728,-0.28369%20-0.94131,-0.23911%20-1.28711,0.10547l-3.89062,3.88672c-0.3432,0.34344%20-0.39015,0.88376%20-0.11133,1.28125l3.45703,4.94531c-0.58061,1.05722%20-1.04985,2.17878%20-1.39844,3.35938l-5.92969,0.98633c-0.4815,0.0811%20-0.83404,0.49805%20-0.83398,0.98633v5.5c-0.00088,0.48518%200.3466,0.901%200.82422,0.98633l5.93359,1.05078c0.3467,1.17855%200.81296,2.30088%201.39453,3.35937l-3.5,4.89648c-0.28369,0.39728%20-0.23911,0.94131%200.10547,1.28711l3.88867,3.89063c0.34265,0.34275%200.88175,0.39048%201.2793,0.11328l4.95508,-3.46875c1.05419,0.57517%202.17218,1.03762%203.3457,1.38086l0.99023,5.96289c0.08025,0.48228%200.49742,0.83584%200.98633,0.83594h5.5c0.4858,0.00071%200.90184,-0.34778%200.98633,-0.82617l1.06055,-5.98633c1.16868,-0.3485%202.28142,-0.8178%203.33008,-1.39648l4.98828,3.5c0.39749,0.27882%200.93781,0.23187%201.28125,-0.11133l3.88867,-3.89258c0.34612,-0.34687%200.38995,-0.89343%200.10352,-1.29102l-3.55664,-4.9375c0.56867,-1.04364%201.02681,-2.14972%201.36719,-3.31055l6.01758,-1.05469c0.47839,-0.08448%200.82689,-0.50053%200.82617,-0.98633v-5.5c-0.00026,-0.48953%20-0.35484,-0.90693%20-0.83789,-0.98633l-6.00781,-0.98242c-0.34266,-1.15945%20-0.80206,-2.26356%20-1.37109,-3.30664l3.50781,-4.99805c0.27882,-0.39749%200.23187,-0.93781%20-0.11133,-1.28125l-3.89062,-3.88867c-0.34687,-0.34612%20-0.89343,-0.38995%20-1.29102,-0.10352l-4.92383,3.54102c-1.04908,-0.57636%20-2.16255,-1.04318%20-3.33398,-1.38867l-1.04687,-5.98437c-0.08364,-0.47917%20-0.49991,-0.82867%20-0.98633,-0.82812zM23.05664,4h3.80859l0.99609,5.68555c0.06772,0.38959%200.35862,0.70269%200.74219,0.79883c1.46251,0.36446%202.83609,0.94217%204.08984,1.70117c0.34265,0.20761%200.77613,0.1907%201.10156,-0.04297l4.67969,-3.36328l2.69336,2.69336l-3.33203,4.74805c-0.22737,0.3236%20-0.24268,0.75079%20-0.03906,1.08984c0.75149,1.25092%201.32146,2.61583%201.68555,4.07031c0.0969,0.38717%200.41473,0.67966%200.80859,0.74414l5.70703,0.93359v3.80859l-5.71875,1.00391c-0.3899,0.06902%20-0.70237,0.36157%20-0.79687,0.74609c-0.35988,1.45263%20-0.93019,2.8175%20-1.68164,4.06836c-0.20617,0.34256%20-0.18851,0.775%200.04492,1.09961l3.37891,4.68945l-2.69336,2.69531l-4.74023,-3.32617c-0.32527,-0.22783%20-0.75452,-0.24163%20-1.09375,-0.03516c-1.24752,0.75899%20-2.62251,1.33943%20-4.08008,1.70898c-0.38168,0.09622%20-0.67142,0.40737%20-0.74023,0.79492l-1.00977,5.6875h-3.81445l-0.94141,-5.66211c-0.06549,-0.39365%20-0.35874,-0.7107%20-0.74609,-0.80664c-1.46338,-0.36069%20-2.84314,-0.93754%20-4.10547,-1.69531c-0.33857,-0.20276%20-0.76473,-0.18746%20-1.08789,0.03906l-4.70312,3.29492l-2.69531,-2.69922l3.32422,-4.64648c0.23221,-0.3254%200.24834,-0.75782%200.04102,-1.09961c-0.76602,-1.26575%20-1.34535,-2.6454%20-1.71094,-4.11523c-0.09555,-0.38244%20-0.40684,-0.67307%20-0.79492,-0.74219l-5.63086,-1v-3.81445l5.62695,-0.93555c0.39312,-0.06519%200.71002,-0.35754%200.80664,-0.74414c0.36873,-1.4749%200.94778,-2.85432%201.71094,-4.11719c0.20562,-0.33876%200.19183,-0.76697%20-0.03516,-1.0918l-3.28516,-4.69531l2.69727,-2.69531l4.66211,3.33203c0.32413,0.23112%200.75447,0.248%201.0957,0.04297c1.25566,-0.75415%202.63862,-1.32636%204.10352,-1.68555c0.38927,-0.09584%200.68369,-0.41486%200.74805,-0.81055zM25,17c-4.40643,0%20-8,3.59357%20-8,8c0,4.40643%203.59357,8%208,8c4.40643,0%208,-3.59357%208,-8c0,-4.40643%20-3.59357,-8%20-8,-8zM25,19c3.32555,0%206,2.67445%206,6c0,3.32555%20-2.67445,6%20-6,6c-3.32555,0%20-6,-2.67445%20-6,-6c0,-3.32555%202.67445,-6%206,-6z'%3e%3c/path%3e%3c/g%3e%3c/g%3e%3c/svg%3e" class="icon-sm" title="Settings">
+      <img src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='white'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%20class='feather%20feather-minus'%3e%3cline%20x1='5'%20y1='12'%20x2='19'%20y2='12'%3e%3c/line%3e%3c/svg%3e" class="icon-sm button" id="minimize" title="Minimize">
+      <img src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='white'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%20class='feather%20feather-square'%3e%3crect%20x='3'%20y='3'%20width='18'%20height='18'%20rx='2'%20ry='2'%3e%3c/rect%3e%3c/svg%3e" class="icon-sm button" id="maximize" title="Maximize">
+      <img src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='white'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%20class='feather%20feather-x'%3e%3cline%20x1='18'%20y1='6'%20x2='6'%20y2='18'%3e%3c/line%3e%3cline%20x1='6'%20y1='6'%20x2='18'%20y2='18'%3e%3c/line%3e%3c/svg%3e" class="icon-sm button" id="close" title="Close">
+    </div>
+    <span id="versionString" hidden></span>
+    <div class="area" style="width: 1000px; height: 440px;">
+      <ul class="sidebar">
+        <li class="tab tab-pane selected">General</li>
+        <li id="bottingTab" class="tab tab-pane">Botting</li>
+        <li class="tab tab-pane">Viewer</li>
+        <li class="tab tab-pane">Scripting</li>
+        <li class="tab tab-pane">Proxy</li>
+        <li class="tab tab-pane">Webhook</li>
+        <li class="tab tab-pane">Accounts</li>
+        <li class="tab tab-pane" data-tab-id="bluxmart">Bluxmart</li>
+        <li class="tab tab-pane" data-tab-id="discordbot">Discord Bot</li>
+      </ul>
+
+      <div class="controlArea">
+
+        <div class="tab-pane" id="general" style="display: block;">
+          <header class="category-page-header general-header">
+            <span class="category-header-icon"><i></i></span>
+            <div><p>General</p><span>Configure bot identity, connection behavior, and client presentation.</span></div>
+          </header>
+
+          <div class="general-dashboard">
+
+            <section class="general-card general-connection-card">
+              <div class="general-card-heading">
+                <span class="general-card-icon connection-icon"></span>
+                <div><span>CONNECTION</span><strong>Bot session</strong></div>
+              </div>
+
+              <div class="flex general-field-row">
+                <p class="text-sm pr-4">Username:</p>
+                <input id="username" type="text" placeholder="username / token">
+              </div>
+
+              <div class="flex mu-2 general-field-row">
+                <p class="text-sm pr-4">Server:</p>
+                <input id="server" type="text" class="" placeholder="localhost:25565">
+
+              </div>
+
+              <div class="flex mu-2 general-field-row">
+                <p class="text-sm pr-4">Max accounts:</p>
+                <input id="botMax" type="number" min="1" class="" placeholder="1">
+              </div>
+
+              <div class="flex mu-2 general-field-row">
+                <p class="text-sm pr-4">Join delay:</p>
+                <input id="joinDelay" type="number" min="0" class="" placeholder="1000">
+              </div>
+
+              <div class="flex mu-2 general-field-row">
+                <p class="text-sm pr-4">Join message:</p>
+                <input id="joinMessage" type="text" class="" placeholder="/register">
+              </div>
+
+              <div class="mu-4">
+                <button id="btnStart" class="button primary-action">Start</button>
+                <button id="btnStop" class="button">Stop</button>
+              </div>
+
+            </section>
+
+            <section class="general-card general-options-card">
+              <div class="general-card-heading">
+                <span class="general-card-icon options-icon"></span>
+                <div><span>PROFILE</span><strong>Connection options</strong></div>
+              </div>
+
+              <div class="flex mu-1">
+                <p class="text-sm">Name:</p>
+
+                <select id="nameType" class="mu-1">
+                  <option value="default">Default</option>
+                  <option value="random">Random</option>
+                  <option value="legit">Legit</option>
+                  <option value="file">File</option>
+                  <option value="acclist">Acc List</option>
+                </select>
+              </div>
+
+              <div id="nameFileDiv" class="mu-2" style="display: none;">
+                <div class="flex">
+                  <p class="text-sm pr-4">File:</p>
+                  <label id="nameFileLabel" class="text-sm input-file button">Choose a file</label>
+                </div>
+              </div>
+
+              <div id="accListDiv" class="mu-2" style="display: none;">
+                <div class="flex">
+                  <p class="text-sm pr-4">Preset:</p>
+                  <select id="accListPreset"></select>
+                </div>
+              </div>
+
+              <div class="flex mu-2">
+                <p class="text-sm">Auth:</p>
+                <select id="authType" class="mu">
+                  <option value="offline">Cracked</option>
+                  <option value="microsoft">Microsoft</option>
+                  <option value="easymc">EasyMC</option>
+                  <option value="altening" disabled>TheAltening</option>
+                </select>
+              </div>
+
+              <div class="flex mu-2">
+                <p class="text-sm">Version:</p>
+                <select id="version" class="mu-1">
+                  <option value="">Auto</option>
+                  <option value="1.21.11">1.21.11</option>
+                  <option value="1.21.9">1.21.9</option>
+                  <option value="1.21.8">1.21.8</option>
+                  <option value="1.21.6">1.21.6</option>
+                  <option value="1.21.5">1.21.5</option>
+                  <option value="1.21.4">1.21.4</option>
+                  <option value="1.21.3">1.21.3</option>
+                  <option value="1.21.1">1.21.1</option>
+                  <option value="1.21">1.21</option>
+                  <option value="1.20.6">1.20.6</option>
+                  <option value="1.20.5">1.20.5</option>
+                  <option value="1.20.4">1.20.4</option>
+                  <option value="1.20.3">1.20.3</option>
+                  <option value="1.20.2">1.20.2</option>
+                  <option value="1.20.1">1.20.1</option>
+                  <option value="1.20">1.20</option>
+                  <option value="1.19.4">1.19.4</option>
+                  <option value="1.19.3">1.19.3</option>
+                  <option value="1.19.2">1.19.2</option>
+                  <option value="1.19.1">1.19.1</option>
+                  <option value="1.19">1.19</option>
+                  <option value="1.18.2">1.18.2</option>
+                  <option value="1.18.1">1.18.1</option>
+                  <option value="1.18">1.18</option>
+                  <option value="1.17.1">1.17.1</option>
+                  <option value="1.17">1.17</option>
+                  <option value="1.16.5">1.16.5</option>
+                  <option value="1.16.4">1.16.4</option>
+                  <option value="1.16.3">1.16.3</option>
+                  <option value="1.16.2">1.16.2</option>
+                  <option value="1.16.1">1.16.1</option>
+                  <option value="1.16">1.16</option>
+                  <option value="1.15.2">1.15.2</option>
+                  <option value="1.15.1">1.15.1</option>
+                  <option value="1.15">1.15</option>
+                  <option value="1.14.4">1.14.4</option>
+                  <option value="1.14.3">1.14.3</option>
+                  <option value="1.14.1">1.14.1</option>
+                  <option value="1.14">1.14</option>
+                  <option value="1.13.2">1.13.2</option>
+                  <option value="1.13.1">1.13.1</option>
+                  <option value="1.13">1.13</option>
+                  <option value="1.12.2">1.12.2</option>
+                  <option value="1.12.1">1.12.1</option>
+                  <option value="1.12">1.12</option>
+                  <option value="1.11.2">1.11.2</option>
+                  <option value="1.11">1.11</option>
+                  <option value="1.10.2">1.10.2</option>
+                  <option value="1.10.1">1.10.1</option>
+                  <option value="1.10">1.10</option>
+                  <option value="1.9">1.9</option>
+                  <option value="1.8">1.8.x</option>
+                </select>
+              </div>
+
+              <div class="flex mu-2">
+                <p class="text-sm">Mode:</p>
+                <select id="botMode" class="mu-1">
+                  <option value="normal">Normal</option>
+                  <option value="minimal">Minimal</option>
+                </select>
+              </div>
+
+            </section>
+
+            <section class="general-card general-spoof-card">
+              <div class="general-card-heading">
+                <span class="general-card-icon spoof-icon"></span>
+                <div><span>IDENTITY</span><strong>Client presentation</strong></div>
+              </div>
+
+              <div class="flex mu-1">
+                <p class="text-sm">Mode:</p>
+                <select id="spoofMode" class="mu-1">
+                  <option value="off">Off</option>
+                  <option value="vanilla">Vanilla</option>
+                  <option value="modded">Modded</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+
+              <div id="spoofCustomClientDiv" class="mu-2" style="display: none;">
+                <div class="flex">
+                  <p class="text-sm pr-4">Client:</p>
+                  <input id="spoofCustomClient" type="text" placeholder="lunar">
+                </div>
+              </div>
+
+              <div class="mu-2">
+                <label class="containerCheckbox">
+                  Hide mods
+                  <input id="spoofHideMods" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+              </div>
+
+              <div class="mu-2">
+                <p class="text-sm-2 pr-4">Payload channels:</p>
+                <textarea id="spoofPayloadChannels" class="textbox" style="width: 240px; height: 60px;"
+                  placeholder="lunar:receive"></textarea>
+              </div>
+
+            </section>
+
+          </div>
+
+        </div>
+
+        <div class="tab-pane" id="botting" style="display: none;">
+          <header class="category-page-header botting-header">
+            <span class="category-header-icon"><i></i></span>
+            <div><p>Botting</p><span>Control connected bots, inventory actions, movement, chat, and automation.</span></div>
+          </header>
+          <div class="space-h" style="width: 890px; height: 440px;">
+            <div class="m-4">
+
+              <ul class="border" id="botList" style="height: 150px;"></ul>
+
+              <div class="space-h mu-2">
+                <label class="containerCheckbox">
+                  Auto
+                  <input id="autoSelect" type="checkbox" checked>
+                  <span class="checkmark"></span>
+                </label>
+
+                <button id="selectAll">Select</button>
+              </div>
+
+              <ul id="controlList" class="border mu-2 flex-c">
+                <li class="tab-2 control-tab selected">Controls</li>
+                <li class="tab-2 control-tab">Chat</li>
+                <li class="tab-2 control-tab">Hotbar</li>
+                <li class="tab-2 control-tab">Inventory</li>
+                <li class="tab-2 control-tab">Move</li>
+                <li class="tab-2 control-tab">Look</li>
+                <li class="tab-2 control-tab">AntiAFK</li>
+                <li class="tab-2 control-tab">KillAura</li>
+                <li class="tab-2 control-tab">Pathfinder</li>
+              </ul>
+
+            </div>
+
+            <div class="m-4">
+
+              <div id="controls" class="control-tab" style="display: block;">
+                <p class="text">Controls</p>
+                <div class="mu-2 input-group">
+                  <button id="btnDisconnect">Disconnect</button>
+                </div>
+              </div>
+
+              <div id="chat" class="control-tab" style="display: none;">
+                <p class="text">Chat</p>
+
+                <div class="space-h-f">
+                  <p class="text-sm mu-2">Chat</p>
+                </div>
+
+                <div class="space-h-f">
+                  <input id="chatMsg" type="text" placeholder="Message">
+                </div>
+
+                <div class="space-h-f mu-2">
+                  <button id="btnChat">Send</button>
+                </div>
+
+                <div class="space-h-f">
+                  <p class="text-sm mu-2">Spam</p>
+                </div>
+
+                <div class="flex">
+                  <p class="text-sm-2 pr-4">Delay</p>
+                  <input id="spamDelay" type="number" placeholder="1000 (ms)">
+                </div>
+
+                <div class="mu-2 space-h">
+
+                  <label class="containerCheckbox">
+                    Spam
+                    <input id="checkSpam" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                  <label class="containerCheckbox">
+                    Bypass
+                    <input id="bypassChat" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+                </div>
+
+              </div>
+
+              <div id="hotbar" class="control-tab" style="display: none;">
+                <p class="text">Hotbar</p>
+                <div class="mu-2 space-h">
+                  <select id="hotbarSlot">
+                    <option value="0">Slot 1</option>
+                    <option value="1">Slot 2</option>
+                    <option value="2">Slot 3</option>
+                    <option value="3">Slot 4</option>
+                    <option value="4">Slot 5</option>
+                    <option value="5">Slot 6</option>
+                    <option value="6">Slot 7</option>
+                    <option value="7">Slot 8</option>
+                    <option value="8">Slot 9</option>
+                  </select>
+                </div>
+
+                <div class="mu-2 space-h-f">
+                  <button id="btnSetHotbar">Set</button>
+                  <button  id="btnUseheld">Use</button>
+                </div>
+
+              </div>
+
+              <div id="inventory" class="control-tab" style="display: none;">
+                <p class="text">Inventory</p>
+
+                <div class="flex">
+                  <p class="text-sm pr-4">Slot</p>
+                  <input id="invSlot" type="number" placeholder="number">
+                </div>
+
+                <div class="mu-2 space-h">
+                  <p class="text-sm">Click</p>
+                </div>
+
+                <div class="space-h-f">
+                  <button id="btnWinClickLeft">Left</button>
+                  <button id="btnWinClickRight">Right</button>
+                </div>
+
+                <div class="mu-2 space-h">
+                  <p class="text-sm">Drop</p>
+                </div>
+
+                <div class="space-h-f">
+                  <button id="btnDropSlot">Slot</button>
+                  <button id="btnDropAll">All</button>
+                </div>
+
+                <div class="mu-2 space-h">
+                  <p class="text-sm">Close window</p>
+                </div>
+
+                <div class="space-h-f">
+                  <button id="btnCloseWindow">Close</button>
+                </div>
+
+              </div>
+
+              <div id="move" class="control-tab" style="display: none;">
+                <p class="text">Move</p>
+
+                <div class="flex mu-2">
+                  <select id="moveType">
+                    <option value="forward">Forward</option>
+                    <option value="back">Backwards</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="jump">Jump</option>
+                    <option value="sprint">Sprint</option>
+                    <option value="sneak">Sneak</option>
+                  </select>
+
+                  <button id="btnResetMove">Reset</button>
+                </div>
+
+                <div class="mu-2">
+                  <button id="btnStartMove">Start</button>
+                  <button id="btnStopMove">Stop</button>
+                </div>
+
+              </div>
+
+              <div id="look" class="control-tab" style="display: none;">
+                <p class="text">Look</p>
+
+                <div class="flex mu-2">
+                  <select id="lookDirection">
+                    <option value="0">North</option>
+                    <option value="3">South</option>
+                    <option value="-1.5">East</option>
+                    <option value="1.5">West</option>
+                  </select>
+                  <button id="btnLook">Look</button>
+                </div>
+
+              </div>
+
+              <div id="antiafk" class="control-tab" style="display: none;">
+                <p class="text">Anti AFK</p>
+
+                <div class="mu-2">
+                  <button id="btnAfkOn">Start</button>
+                  <button id="btnAfkOff">Stop</button>
+                </div>
+
+              </div>
+              <div id="killaura" class="control-tab" style="display: none;">
+                <p class="text">KillAura</p>
+
+
+                <div class="mu-2">
+                  <div class="space-h-f">
+                    <p class="text-sm">Targets</p>
+                  </div>
+
+                  <label class="containerCheckbox mu-2">
+                    Player
+                    <input id="targetPlayer" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                  <label class="containerCheckbox">
+                    Vehicle
+                    <input id="targetVehicle" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                  <label class="containerCheckbox">
+                    Mob
+                    <input id="targetMob" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                  <label class="containerCheckbox">
+                    Animal
+                    <input id="targetAnimal" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                </div>
+
+                <div class="mu-2">
+                  <div class="space-h-f">
+                    <p class="text-sm">Settings</p>
+                  </div>
+
+                  <div class="flex">
+                    <p class="text-sm-2 pr-4">Delay</p>
+                    <input id="killauraDelay" type="number" placeholder="10 (ticks)">
+                  </div>
+
+                  <div class="slidecontainer space-h mu-2">
+                    <p class="text-sm-2">Range</p>
+                    <div class="flex">
+                      <p class="text-sm-2 pl-2">1</p>
+                      <input id="killauraRange" type="range" min="1" max="6" value="1" class="slider">
+                      <p class="text-sm-2 pl-2">6</p>
+                    </div>
+                  </div>
+
+
+                  <label class="containerCheckbox mu-2">
+                    Rotate
+                    <input id="killauraRotate" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                  <label class="containerCheckbox mu-2">
+                    Toggle
+                    <input id="killauraToggle" type="checkbox">
+                    <span class="checkmark"></span>
+                  </label>
+
+                </div>
+
+              </div>
+
+              <div id="pathfinder" class="control-tab" style="display: none;">
+                <p class="text">Pathfinder</p>
+                <div class="mu-2">
+
+                  <div class="border">
+                    <div class="flex">
+                      <p class="tip pr-4 pl-2 border">#</p>
+                    <input id="pathFinderCommand" class="pl-2" type="text" placeholder="goto 100 64 100"
+                        style="border: none;">
+                    <button id="btnPathfinderRun">Run</button>
+                    </div>
+                  </div>
+
+                  <div class="mu-1">
+                    <p class="text-sm mu-4">Commands</p>
+                    <p class="text-sm-2 mu-2"><code>follow player</code>Follows a visible player</p>
+                    <p class="text-sm-2"><code>goto X Y Z</code>Walks to an exact block</p>
+                    <p class="text-sm-2"><code>near X Y Z range</code>Walks within a radius</p>
+                    <p class="text-sm-2"><code>stop</code>Stops pathfinding</p>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+
+            <div class="m-4 pr-4">
+              <ul id="chatBox" class="border"></ul>
+
+              <div class="space-h mu-2">
+
+                <label class="containerCheckbox">
+                  Show chat
+                  <input id="enableChat" type="checkbox" checked>
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox">
+                  Auto scroll
+                  <input id="autoScrollChat" type="checkbox" checked>
+                  <span class="checkmark"></span>
+                </label>
+
+                <button id="clearChat">Clear</button>
+
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="viewer" style="display: none;">
+          <div class="bot-viewer">
+            <div class="bot-viewer-header category-page-header viewer-header">
+              <span class="category-header-icon"><i></i></span>
+              <div class="category-header-copy">
+                <p class="text">Viewer</p>
+                <p id="botViewerStatus" class="text-sm-2">Choose a connected bot to inspect its inventory.</p>
+              </div>
+              <select id="botViewerSelect" aria-label="Bot to inspect">
+                <option value="">No bot selected</option>
+              </select>
+            </div>
+
+            <div class="bot-viewer-panels">
+              <div class="minecraft-inventory" aria-live="polite">
+                <div class="minecraft-inventory-section">
+                  <p class="minecraft-label">Inventory</p>
+                  <div id="inventoryGrid" class="minecraft-grid" aria-label="Bot inventory"></div>
+                </div>
+                <div class="minecraft-hotbar-row">
+                  <div class="minecraft-offhand-wrap">
+                    <p class="minecraft-offhand-label">Offhand</p>
+                    <div id="offhandSlot" class="minecraft-slot" aria-label="Bot offhand"></div>
+                  </div>
+                  <div class="minecraft-hotbar-wrap">
+                    <p class="minecraft-label minecraft-hotbar-label">Hotbar</p>
+                    <div id="hotbarGrid" class="minecraft-grid minecraft-hotbar" aria-label="Bot hotbar"></div>
+                  </div>
+                </div>
+              </div>
+              <div id="openWindowPanel" class="minecraft-inventory open-window-panel" style="display: none;">
+                <div class="open-window-heading">
+                  <p id="openWindowTitle" class="minecraft-label">Open container</p>
+                  <button id="closeViewerContainer" type="button">Close container</button>
+                </div>
+                <div id="openWindowGrid" class="minecraft-grid" aria-label="Bot open container"></div>
+              </div>
+            </div>
+            <p class="text-sm-2 bot-viewer-note">Live item data from the selected bot. Hover an item for its name and details.</p>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="scripting" style="display: none;">
+          <header class="category-page-header scripting-header">
+            <span class="category-header-icon"><i></i></span>
+            <div><p>Scripting</p><span>Build and run repeatable command workflows across selected bots.</span></div>
+          </header>
+
+          <div class="space-h">
+            <div class="m-4 flex-c">
+              <p class="text-sm">Script</p>
+              <textarea id="scriptText" class="textbox" style="width: 300px; height: 350px;" spellcheck="false" placeholder="Chat Hello!"></textarea>
+              <div class="space-h mu-2">
+                <div>
+                  <button id="runScript" class="primary-action">Start</button>
+                  <button id="stopScript">Stop</button>
+                </div>
+                <button id="clearScript">Clear</button>
+              </div>
+            </div>
+
+            <div class="m-4 pr-4" style="width: 300px;">
+              <p class="text-sm">Options</p>
+
+              <label class="containerCheckbox mu-2">
+                Run on connect
+                <input id="runOnConnect" type="checkbox">
+                <span class="checkmark"></span>
+              </label>
+
+              <label class="containerCheckbox mu-1">
+                Run on spawn
+                <input id="runOnSpawn" type="checkbox">
+                <span class="checkmark"></span>
+              </label>
+
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tab-pane" id="proxy" style="display: none;">
+          <header class="category-page-header proxy-header">
+            <span class="category-header-icon"><i></i></span>
+            <div><p>Proxy</p><span>Manage, test, scrape, and monitor the proxy pool used by connected accounts.</span></div>
+          </header>
+
+          <div class="space-h">
+            <div class="m-4 flex-c">
+
+              <div class="space-h">
+                <p class="text-sm">Proxy</p>
+                <div class="flex">
+                  <p class="text-sm">Type:</p>
+                  <select id="proxyType">
+                    <option value="none">None</option>
+                    <option value="socks4">SOCKS4</option>
+                    <option value="socks5">SOCKS5</option>
+                  </select>
+                </div>
+              </div>
+
+              <textarea id="proxyList" class="textbox" style="width: 300px; height: 350px;" placeholder="Proxy:Port:Username:Password"></textarea>
+              <div class="space-h mu-2">
+                <div>
+                  <button id="proxyTestStart" class="primary-action">Test</button>
+                  <button id="proxyTestStop">Stop</button>
+                </div>
+                <button id="proxyListClear">Clear</button>
+              </div>
+            </div>
+
+            <div class="m-4 pr-4" style="width: 300px;">
+              <p class="text-sm">Options</p>
+
+              <div class="slidecontainer space-h mu-1">
+                <p class="text-sm-2">Proxy per bot</p>
+                <div class="flex" style="position: relative; right: 15px;">
+                  <p class="text-sm-2 pl-2">1</p>
+                  <input id="proxyPerBot" type="range" min="1" max="10" value="1" class="slider">
+                  <p class="text-sm-2 pl-2">10</p>
+                </div>
+              </div>
+
+              <label class="containerCheckbox mu-1">
+                Randomize order
+                <input id="randomizeOrder" type="checkbox">
+                <span class="checkmark"></span>
+              </label>
+
+              <button id="proxyScrape" class="mu-1 primary-action">Scrape</button>
+              <button id="proxyClearDupe">Clear Dupe</button>
+
+              <p class="text-sm mu-4">Proxy test</p>
+
+              <div class="flex mu-2">
+                <p class="text-sm-2 pr-4">Delay</p>
+                <input id="proxyCheckDelay" type="number" placeholder="100 (ms)">
+              </div>
+
+              <div class="flex mu-2">
+                <p class="text-sm-2 pr-4">Timeout</p>
+                <input id="proxyCheckTimeout" type="number" placeholder="5000 (ms)">
+              </div>
+
+              <p class="text-sm mu-4">Logs</p>
+
+              <ul id="proxyLogbox" class="border mu-2"></ul>
+
+              <div class="space-h mu-2">
+                <label class="containerCheckbox">
+                  Auto scroll
+                  <input id="autoScrollProxy" type="checkbox" checked>
+                  <span class="checkmark"></span>
+                </label>
+                <button id="proxyLogClear">Clear</button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tab-pane" id="webhook" style="display: none;">
+          <header class="category-page-header webhook-header">
+            <span class="category-header-icon"><i></i></span>
+            <div><p>Webhook</p><span>Route important connection, chat, authentication, and kick events.</span></div>
+          </header>
+          <div class="space-h">
+            <div class="m-4 flex-c">
+
+              <div class="space-h">
+
+                <label class="containerCheckbox">
+                  Webhook:
+                  <input id="enableWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <div class="flex pr-4">
+                  <input id="webhookLink" type="text" class="" placeholder="https://...">
+                </div>
+
+                <button id="webhookTest" class="primary-action">Test</button>
+
+              </div>
+
+              <div class="mu-4">
+
+                <p class="text-sm">Logs</p>
+
+                <label class="containerCheckbox mu-1">
+                  Actions
+                  <input id="actionLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox mu-1">
+                  Proxy error
+                  <input id="proxyLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox mu-1">
+                  Chat
+                  <input id="chatLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox mu-1">
+                  Feedback
+                  <input id="feedbackLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox mu-1">
+                  Joins
+                  <input id="joinLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox mu-1">
+                  Kicks
+                  <input id="kickLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+
+                <label class="containerCheckbox mu-1">
+                  Auth message
+                  <input id="authLogWebhook" type="checkbox">
+                  <span class="checkmark"></span>
+                </label>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane" id="accounts" style="display: none;">
+          <header class="category-page-header accounts-header">
+            <span class="category-header-icon"><i></i></span>
+            <div><p>Accounts</p><span>Organize reusable account groups and authentication profiles.</span></div>
+          </header>
+          <div class="accounts-page">
+
+            <section class="ui-card accounts-sidebar">
+              <div class="page-heading">
+                <p class="card-title">Account Presets</p>
+                <button id="addPreset" class="primary-action">Add</button>
+              </div>
+              <ul id="presetList"></ul>
+            </section>
+
+            <section id="presetEditor" class="ui-card accounts-editor" style="display: none;">
+              <p class="card-title">Edit Preset</p>
+              <label class="field-row mu-2">
+                <span>Name</span>
+                <input id="presetName" type="text" placeholder="Preset name" data-no-config>
+              </label>
+              <label class="field-row mu-2">
+                <span>Auth type</span>
+                <select id="presetAuthType" data-no-config>
+                  <option value="offline">Cracked</option>
+                  <option value="microsoft">Microsoft</option>
+                  <option value="easymc">EasyMC</option>
+                </select>
+              </label>
+              <div class="mu-2">
+                <p class="text-sm-2">Accounts <span id="presetAccountCount" class="preset-count-badge">0</span></p>
+                <textarea id="presetAccounts" class="textbox accounts-textarea" placeholder="username1&#10;username2&#10;token..." data-no-config></textarea>
+                <div id="microsoftAccountsManager" class="microsoft-accounts-manager" style="display: none;">
+                  <div class="microsoft-account-add">
+                    <button id="addMicrosoftAccount" class="primary-action" type="button">Add account</button>
+                  </div>
+                  <p class="microsoft-order-hint">Drag accounts to set which one loads first.</p>
+                  <ul id="microsoftAccountList" class="microsoft-account-list" aria-label="Linked Microsoft accounts"></ul>
+                  <div id="microsoftAccountsEmpty" class="microsoft-accounts-empty">No Microsoft accounts added yet.</div>
+                </div>
+              </div>
+              <div class="space-h mu-2">
+                <button id="savePreset" class="primary-action">Save</button>
+                <button id="deletePreset">Delete</button>
+              </div>
+            </section>
+
+            <div id="presetEmptyState" class="accounts-empty">
+              <p class="tip">Select a preset or create one.</p>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="tab-pane" id="bluxmart" style="display: none;">
+          <div class="tab-hero">
+            <div>
+              <p class="tab-eyebrow">Bluxmart.com Integration</p>
+              <h1 class="tab-title">Auto-Delivery Queue &amp; Sync</h1>
+              <p class="tab-subtitle">Automated DonutSMP delivery engine synced with bluxmart.com Stripe orders using your active TrafficerMC bot.</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="bluxSyncBadge" class="preset-count-badge" style="padding: 6px 12px; font-size: 12px;">Syncing with bluxmart.com...</span>
+              <button id="bluxSyncNowBtn" class="primary-action" type="button">Sync Now</button>
+            </div>
+          </div>
+
+          <div class="section-grid two-col" style="margin-bottom: 14px;">
+            <section class="ui-card">
+              <p class="card-title">Delivery Rules &amp; Active Bot</p>
+              <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #b5bcc9;">
+                <div style="display: flex; justify-content: space-between; padding: 8px 10px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                  <span>Active Delivery Bot:</span>
+                  <strong id="bluxActiveBotName" style="color: #4ade80;">Waiting for TrafficerMC bot...</strong>
+                </div>
+                <div style="padding: 8px 10px; background: rgba(16,185,129,0.08); border-radius: 8px; border: 1px solid rgba(16,185,129,0.25); color: #a7f3d0;">
+                  <strong>💸 Money Orders:</strong> Delivered via <code>/pay &lt;username&gt; &lt;amount&gt;</code> — <strong>Offline OK</strong> (buyer does NOT need to be online).
+                </div>
+                <div style="padding: 8px 10px; background: rgba(245,158,11,0.08); border-radius: 8px; border: 1px solid rgba(245,158,11,0.25); color: #fde68a;">
+                  <strong>🎮 Physical Items (Spawners / Elytra / Crates):</strong> Buyer <strong>MUST be online on donutsmp.net</strong> to accept <code>/tpa</code> + 5-block anti-steal drop.
+                </div>
+              </div>
+            </section>
+
+            <section class="ui-card">
+              <p class="card-title">Manual / Test Delivery</p>
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                <img id="bluxPreviewHead" src="https://mc-heads.net/avatar/MHF_Steve/64" alt="MC Head" style="width: 42px; height: 42px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); image-rendering: pixelated;" />
+                <div style="flex: 1;">
+                  <label class="text-sm-2" for="bluxBuyerIgn">Buyer Minecraft Username (IGN)</label>
+                  <input id="bluxBuyerIgn" type="text" class="textbox" placeholder="e.g. Notch" data-no-config />
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                <div>
+                  <label class="text-sm-2" for="bluxMoneyInput">Money ($)</label>
+                  <input id="bluxMoneyInput" type="number" class="textbox" value="0" min="0" step="1000" data-no-config />
+                </div>
+                <div>
+                  <label class="text-sm-2" for="bluxSpawnerInput">Spawners</label>
+                  <input id="bluxSpawnerInput" type="number" class="textbox" value="0" min="0" data-no-config />
+                </div>
+                <div>
+                  <label class="text-sm-2" for="bluxElytraInput">Elytras</label>
+                  <input id="bluxElytraInput" type="number" class="textbox" value="0" min="0" data-no-config />
+                </div>
+              </div>
+              <button id="bluxQueueOrderBtn" class="primary-action" type="button" style="width: 100%;">Queue Immediate Delivery</button>
+            </section>
+          </div>
+
+          <section class="ui-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <p class="card-title" style="margin: 0;">Bluxmart Live Order Queue (<span id="bluxOrderCount">0</span>)</p>
+              <span id="bluxLastSyncTime" class="text-sm-2">Last cloud check: —</span>
+            </div>
+            <div style="overflow-x: auto; max-height: 290px; overflow-y: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                <thead>
+                  <tr style="border-bottom: 1px solid rgba(255,255,255,0.08); color: #8b95a5;">
+                    <th style="padding: 8px;">Buyer (Minecraft Head + IGN)</th>
+                    <th style="padding: 8px;">Purchased Contents</th>
+                    <th style="padding: 8px;">Presence Rule</th>
+                    <th style="padding: 8px;">Status</th>
+                    <th style="padding: 8px; text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="bluxQueueTableBody">
+                  <tr>
+                    <td colspan="5" style="padding: 18px; text-align: center; color: #8b95a5;">No orders in queue yet. Purchases on bluxmart.com appear here automatically.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="tab-pane" id="discordbot" style="display: none;">
+          <div class="tab-hero">
+            <div>
+              <p class="tab-eyebrow">Bluxbot Discord Engine</p>
+              <h1 class="tab-title">Discord Server Bot &amp; Ticket Sync</h1>
+              <p class="tab-subtitle">Live Discord bot (Tickets, PDF Transcripts, 1-5★ Customer Reviews, Auto-Roles &amp; Order Logs) running on the same server.</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="discordStatusBadge" class="preset-count-badge" style="padding: 6px 12px; font-size: 12px;">Checking Discord Bot...</span>
+              <button id="discordForceSyncBtn" class="primary-action" type="button">Sync Guilds</button>
+              <a id="discordAdminConsoleLink" href="/discord-admin" target="_blank" rel="noopener" style="padding: 6px 12px; border-radius: 8px; background: rgba(88,101,242,0.25); border: 1px solid rgba(88,101,242,0.5); color: #c7d2fe; text-decoration: none; font-size: 12px; font-weight: 600;">Open Full Discord Console ↗</a>
+            </div>
+          </div>
+
+          <div class="section-grid two-col" style="margin-bottom: 14px;">
+            <section class="ui-card">
+              <p class="card-title">Discord Credentials (Live Connect)</p>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div>
+                  <label class="text-sm-2" for="discordTokenInput">DISCORD_TOKEN</label>
+                  <input id="discordTokenInput" type="password" class="textbox" placeholder="Paste Discord Bot Token (leave blank to keep current)" data-no-config />
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <div>
+                    <label class="text-sm-2" for="discordClientIdInput">CLIENT_ID (Application ID)</label>
+                    <input id="discordClientIdInput" type="text" class="textbox" placeholder="e.g. 123456789012345678" data-no-config />
+                  </div>
+                  <div>
+                    <label class="text-sm-2" for="discordGuildIdInput">GUILD_ID (Optional Server ID)</label>
+                    <input id="discordGuildIdInput" type="text" class="textbox" placeholder="e.g. 123456789012345678" data-no-config />
+                  </div>
+                </div>
+                <button id="discordSaveCredsBtn" class="primary-action" type="button" style="width: 100%; margin-top: 4px;">Save &amp; Connect Discord Bot</button>
+              </div>
+            </section>
+
+            <section class="ui-card">
+              <p class="card-title">Connected Discord Servers &amp; Active Features</p>
+              <div id="discordGuildsList" style="display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #b5bcc9;">
+                <div style="padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                  Waiting for Discord Bot status...
+                </div>
+              </div>
+              <div style="margin-top: 10px; padding: 8px 10px; background: rgba(88,101,242,0.1); border-radius: 8px; border: 1px solid rgba(88,101,242,0.28); font-size: 11px; color: #c7d2fe;">
+                <strong>Included Features:</strong> Ticket Panels (<code>Claim</code>, <code>General</code>, <code>Bug</code>, <code>Staff Report</code>, <code>Partner</code>) • Automatic PDF Transcripts on Close • 1–5★ Customer Review Modal • Auto-Role &amp; Welcome Embeds • Automatic Bluxmart Order Delivery Logs.
+              </div>
+            </section>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <ul id="notifications" class="notification"></ul>
+
+    <div id="settings" class="settings-tab" style="display: none;">
+      <div class="settings-tab-content">
+        <div class="settings-header">
+          <div>
+            <p class="text">Settings</p>
+            <p class="text-sm-2">Connection behavior and activity logging.</p>
+          </div>
+          <button id="closeSettings" class="settings-close" aria-label="Close settings">×</button>
+        </div>
+
+        <div class="settings-grid">
+          <section class="ui-card">
+            <p class="card-title">Bot behavior</p>
+            <div class="settings-control-row">
+              <label class="toggle-row">
+                <span>Linear command delay</span>
+                <input id="isLinear" type="checkbox">
+                <span class="switch"></span>
+              </label>
+              <input id="linearDelay" type="number" min="0" placeholder="100 ms">
+            </div>
+            <div class="settings-control-row">
+              <label class="toggle-row">
+                <span>Auto reconnect</span>
+                <input id="autoReconnect" type="checkbox">
+                <span class="switch"></span>
+              </label>
+              <input id="reconnectDelay" type="number" min="0" placeholder="100 ms">
+            </div>
+            <div class="settings-control-row">
+              <label class="toggle-row">
+                <span>Keep-alive timeout</span>
+              </label>
+              <input id="keepAliveTimeout" type="number" min="0" placeholder="300000 ms">
+            </div>
+            <p class="text-sm-2">Higher values (e.g. 60000-300000) prevent "keepAliveError" disconnects on laggy servers or when running many bots.</p>
+          </section>
+
+          <section class="ui-card">
+            <p class="card-title">Activity logs</p>
+            <label class="toggle-row">
+              <span>Actions</span>
+              <input id="actionLogChat" type="checkbox" checked>
+              <span class="switch"></span>
+            </label>
+            <label class="toggle-row">
+              <span>Proxy errors</span>
+              <input id="proxyLogChat" type="checkbox">
+              <span class="switch"></span>
+            </label>
+          </section>
+        </div>
+
+        <div class="settings-footer">
+          <div>
+            <p class="card-title">Configuration</p>
+            <p class="text-sm-2">Reset all saved fields and toggles to their defaults.</p>
+          </div>
+          <button id="resetConfig">Reset configuration</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="minimal-statusbar">
+      <div class="statusbar-item" title="Connected bots">
+        <img src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='white'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%20class='feather%20feather-user'%3e%3cpath%20d='M20%2021v-2a4%204%200%200%200-4-4H8a4%204%200%200%200-4%204v2'%3e%3c/path%3e%3ccircle%20cx='12'%20cy='7'%20r='4'%3e%3c/circle%3e%3c/svg%3e" class="icon-sm" alt="">
+        <span id="botCount">0</span>
+        <span class="statusbar-label">Bots</span>
+      </div>
+      <div class="statusbar-divider"></div>
+      <div class="statusbar-item" title="Session uptime">
+        <img src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='white'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%20class='feather%20feather-clock'%3e%3ccircle%20cx='12'%20cy='12'%20r='10'%3e%3c/circle%3e%3cpolyline%20points='12%206%2012%2012%2016%2014'%3e%3c/polyline%3e%3c/svg%3e" class="icon-sm" alt="">
+        <span id="idUptime">00:00</span>
+      </div>
+      <div id="proxyCheckStatus" class="statusbar-item" style="display: none;" title="Proxy check progress">
+        <img src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20xmlns:xlink='http://www.w3.org/1999/xlink'%20style='margin:auto;background:transparent;display:block;'%20width='100px'%20height='100px'%20viewBox='0%200%20100%20100'%20preserveAspectRatio='xMidYMid'%3e%3ccircle%20cx='50'%20cy='50'%20fill='none'%20stroke='rgba(235,%20235,%20245,%200.6)'%20stroke-width='10'%20r='30'%20stroke-dasharray='141.37166941154067%2049.12388980384689'%3e%3canimateTransform%20attributeName='transform'%20type='rotate'%20repeatCount='indefinite'%20dur='0.5s'%20values='0%2050%2050;360%2050%2050'%20keyTimes='0;1'%3e%3c/animateTransform%3e%3c/circle%3e%3c/svg%3e" class="icon-sm" alt="">
+        <span id="proxyCheckStatusCount">/</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    document.getElementById('openSettings').addEventListener('click', () => {
+      document.getElementById('settings').style.display = 'flex'
+    })
+    document.getElementById('closeSettings').addEventListener('click', () => {
+      document.getElementById('settings').style.display = 'none'
+    })
+    document.getElementById('clearChat').addEventListener('click', () => {
+      document.getElementById('chatBox').innerHTML = ''
+    })
+    let spamInterval;
+
+    document.getElementById('checkSpam').addEventListener('change', () => {
+      const checkbox = document.getElementById('checkSpam');
+      const spamDelayInput = document.getElementById('spamDelay');
+
+      if (checkbox.checked) {
+        const delay = parseInt(spamDelayInput.value, 10) || 1000;
+        document.getElementById('btnChat').click();
+        spamInterval = setInterval(() => {
+          document.getElementById('btnChat').click();
+        }, delay);
+      } else {
+        clearInterval(spamInterval);
+        spamInterval = null;
+      }
+    });
+
+    // Uptime
+    let botStartTime;
+    let botUptime;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      botStartTime = Date.now();
+      updateUptime();
+    })
+
+    function updateUptime() {
+      clearInterval(botUptime);
+      botUptime = setInterval(() => {
+        document.getElementById('idUptime').innerHTML = calculateUptime(botStartTime);
+      }, 1000);
+    }
+
+    function calculateUptime(startTime) {
+      const currentTime = Date.now();
+      const uptimeInSeconds = Math.floor((currentTime - startTime) / 1000);
+      const minutes = Math.floor(uptimeInSeconds / 60);
+      const seconds = uptimeInSeconds % 60;
+      return `${formatTime(minutes)}:${formatTime(seconds)}`;
+    }
+    function formatTime(time) {
+      return time < 10 ? "0" + time : time;
+    }
+    document.getElementById('clearScript').addEventListener('click', () => {
+      document.getElementById('scriptText').value = ''
+    })
+    document.getElementById('proxyListClear').addEventListener('click', () => {
+      document.getElementById('proxyList').value = ''
+    })
+    document.getElementById('proxyLogClear').addEventListener('click', () => {
+      document.getElementById('proxyLogbox').innerHTML = ''
+    })
+
+    // Bluxmart.com Auto-Delivery Dashboard Controller
+    ;(function initBluxmartController() {
+      const ignInput = document.getElementById('bluxBuyerIgn');
+      const headImg = document.getElementById('bluxPreviewHead');
+      const syncBtn = document.getElementById('bluxSyncNowBtn');
+      const queueBtn = document.getElementById('bluxQueueOrderBtn');
+
+      if (ignInput && headImg) {
+        ignInput.addEventListener('input', () => {
+          const ign = ignInput.value.trim() || 'MHF_Steve';
+          headImg.src = `https://mc-heads.net/avatar/${encodeURIComponent(ign)}/64`;
+        });
+      }
+
+      window.bluxOrderAction = async function(id, action) {
+        try {
+          await fetch('/api/order/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, action })
+          });
+          refreshBluxmartStatus();
+        } catch (err) {
+          console.error('Order action error:', err);
+        }
+      };
+
+      async function refreshBluxmartStatus() {
+        try {
+          const res = await fetch('/api/status');
+          if (!res.ok) return;
+          const data = await res.json();
+
+          const botEl = document.getElementById('bluxActiveBotName');
+          if (botEl) {
+            botEl.textContent = data.bot?.connected
+              ? `${data.bot.username} (Online on ${data.bot.host})`
+              : `No active bot (${data.bot?.activeCount || 0} connected — start a bot in General/Accounts tab)`;
+            botEl.style.color = data.bot?.connected ? '#4ade80' : '#fbbf24';
+          }
+
+          const syncBadge = document.getElementById('bluxSyncBadge');
+          if (syncBadge) {
+            syncBadge.textContent = data.sync?.lastError
+              ? `Sync Error: ${data.sync.lastError}`
+              : `Synced (${data.sync?.siteUrl || 'https://bluxmart.com'})`;
+          }
+
+          const lastSyncEl = document.getElementById('bluxLastSyncTime');
+          if (lastSyncEl && data.sync?.lastSyncAt) {
+            lastSyncEl.textContent = `Last cloud check: ${new Date(data.sync.lastSyncAt).toLocaleTimeString()}`;
+          }
+
+          const queue = Array.isArray(data.queue) ? data.queue : [];
+          const countEl = document.getElementById('bluxOrderCount');
+          if (countEl) countEl.textContent = String(queue.length);
+
+          const tbody = document.getElementById('bluxQueueTableBody');
+          if (tbody) {
+            if (queue.length === 0) {
+              tbody.innerHTML = '<tr><td colspan="5" style="padding: 18px; text-align: center; color: #8b95a5;">No orders in queue yet. Purchases on bluxmart.com appear here automatically.</td></tr>';
+            } else {
+              tbody.innerHTML = queue.slice().reverse().map((o) => {
+                const ign = o.recipient || 'MHF_Steve';
+                const parts = [];
+                if (Number(o.money) > 0) parts.push(`$${Number(o.money).toLocaleString()} Money`);
+                if (Number(o.spawners) > 0) parts.push(`${o.spawners}x Spawner`);
+                if (Number(o.elytras) > 0) parts.push(`${o.elytras}x Elytra`);
+                const requiresInGame = (Number(o.spawners) > 0 || Number(o.elytras) > 0) || Boolean(o.requiresInGame);
+                const ruleBadge = requiresInGame
+                  ? '<span style="color:#fbbf24;font-weight:600;">🎮 Must Be In-Game (/tpa)</span>'
+                  : '<span style="color:#4ade80;font-weight:600;">💸 Offline Money OK (/pay)</span>';
+                const statusColor = o.status === 'completed' ? '#4ade80' : o.status === 'processing' ? '#60a5fa' : o.status === 'failed' ? '#f87171' : '#fcd34d';
+                return `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                  <td style="padding: 8px; display: flex; align-items: center; gap: 8px;">
+                    <img src="https://mc-heads.net/avatar/${encodeURIComponent(ign)}/32" style="width: 26px; height: 26px; border-radius: 5px; image-rendering: pixelated;" />
+                    <div>
+                      <div style="font-weight: 700; color: #fff;">${ign}</div>
+                      <div style="font-size: 10px; color: #8b95a5;">${o.id}</div>
+                    </div>
+                  </td>
+                  <td style="padding: 8px; color: #e2e8f0;">${parts.join(' + ') || 'Custom Order'}</td>
+                  <td style="padding: 8px;">${ruleBadge}</td>
+                  <td style="padding: 8px; color: ${statusColor}; font-weight: 700; text-transform: uppercase;">${o.status}${o.error ? ` (${o.error})` : ''}</td>
+                  <td style="padding: 8px; text-align: right;">
+                    <button onclick="window.bluxOrderAction('${o.id}', 'retry')" style="padding: 3px 7px; font-size: 11px; margin-right: 4px;">Retry</button>
+                    <button onclick="window.bluxOrderAction('${o.id}', 'complete')" style="padding: 3px 7px; font-size: 11px; margin-right: 4px;">Done</button>
+                    <button onclick="window.bluxOrderAction('${o.id}', 'delete')" style="padding: 3px 7px; font-size: 11px;">Remove</button>
+                  </td>
+                </tr>`;
+              }).join('');
+            }
+          }
+
+          // Update Discord Bot tab status
+          if (data.discord) {
+            const dBadge = document.getElementById('discordStatusBadge');
+            if (dBadge) {
+              dBadge.textContent = data.discord.ready
+                ? `Online: ${data.discord.tag} (${data.discord.ping}ms • ${data.discord.guildCount} Server${data.discord.guildCount === 1 ? '' : 's'})`
+                : (data.discord.lastError || 'Waiting for DISCORD_TOKEN & CLIENT_ID');
+              dBadge.style.color = data.discord.ready ? '#4ade80' : '#fbbf24';
+            }
+            const clientIdEl = document.getElementById('discordClientIdInput');
+            if (clientIdEl && !clientIdEl.value && data.discord.clientId) {
+              clientIdEl.value = data.discord.clientId;
+            }
+            const guildIdEl = document.getElementById('discordGuildIdInput');
+            if (guildIdEl && !guildIdEl.value && data.discord.guildId) {
+              guildIdEl.value = data.discord.guildId;
+            }
+            const gListEl = document.getElementById('discordGuildsList');
+            if (gListEl) {
+              const gList = Array.isArray(data.discord.guilds) ? data.discord.guilds : [];
+              if (gList.length === 0) {
+                gListEl.innerHTML = `<div style="padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">${data.discord.ready ? 'Bot is online. Invite it to your Discord server to auto-sync roles & channels.' : 'Enter DISCORD_TOKEN & CLIENT_ID on the left and click Save & Connect.'}</div>`;
+              } else {
+                gListEl.innerHTML = gList.map((g) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:8px;border:1px solid rgba(255,255,255,0.08);">
+                  <div><strong style="color:#fff;">${g.name}</strong> <span style="font-size:11px;color:#8b95a5;">(${g.id})</span></div>
+                  <span style="color:#4ade80;font-weight:600;">${g.memberCount} members • Live Synced</span>
+                </div>`).join('');
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore when running inside offline Electron without web API
+        }
+      }
+
+      const discordSaveBtn = document.getElementById('discordSaveCredsBtn');
+      if (discordSaveBtn) {
+        discordSaveBtn.addEventListener('click', async () => {
+          const token = document.getElementById('discordTokenInput')?.value.trim() || undefined;
+          const clientId = document.getElementById('discordClientIdInput')?.value.trim() || undefined;
+          const guildId = document.getElementById('discordGuildIdInput')?.value.trim() || undefined;
+          discordSaveBtn.textContent = 'Connecting Discord Bot...';
+          try {
+            const res = await fetch('/api/discord/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token, clientId, guildId })
+            });
+            const out = await res.json();
+            if (!out.ok) alert('Discord Bot Error: ' + (out.error || 'Failed to connect'));
+            await refreshBluxmartStatus();
+          } finally {
+            discordSaveBtn.textContent = 'Save & Connect Discord Bot';
+          }
+        });
+      }
+
+      const discordSyncBtn = document.getElementById('discordForceSyncBtn');
+      if (discordSyncBtn) {
+        discordSyncBtn.addEventListener('click', async () => {
+          discordSyncBtn.textContent = 'Syncing...';
+          try {
+            await fetch('/api/discord/sync', { method: 'POST' });
+            await refreshBluxmartStatus();
+          } finally {
+            discordSyncBtn.textContent = 'Sync Guilds';
+          }
+        });
+      }
+
+      if (syncBtn) {
+        syncBtn.addEventListener('click', async () => {
+          syncBtn.textContent = 'Syncing...';
+          try {
+            await fetch('/api/sync-now', { method: 'POST' });
+            await refreshBluxmartStatus();
+          } finally {
+            syncBtn.textContent = 'Sync Now';
+          }
+        });
+      }
+
+      if (queueBtn) {
+        queueBtn.addEventListener('click', async () => {
+          const recipient = ignInput?.value.trim();
+          const money = Number(document.getElementById('bluxMoneyInput')?.value || 0);
+          const spawners = Number(document.getElementById('bluxSpawnerInput')?.value || 0);
+          const elytras = Number(document.getElementById('bluxElytraInput')?.value || 0);
+          if (!recipient) return alert('Enter a Buyer Minecraft Username (IGN) first.');
+          await fetch('/api/deliver', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recipient, money, spawners, elytras })
+          });
+          await refreshBluxmartStatus();
+        });
+      }
+
+      setInterval(refreshBluxmartStatus, 3000);
+      setTimeout(refreshBluxmartStatus, 600);
+    })();
+  </script>
+</body>
+
+</html>

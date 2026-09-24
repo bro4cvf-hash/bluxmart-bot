@@ -1,0 +1,9 @@
+node_modules/
+.env
+trafficermc-store.json
+delivery-queue.json
+minecraft-profiles/
+data/admin.json
+data/guilds.json
+*.log
+.DS_Store

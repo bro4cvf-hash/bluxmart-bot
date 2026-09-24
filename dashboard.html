@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bluxmart × Wispbyte Auto-Delivery Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #090b10;
+      color: #f3f4f6;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    .pixelated {
+      image-rendering: pixelated;
+    }
+    .glass {
+      background: rgba(17, 21, 30, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-amber-500 selection:text-black">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- Top Header Bar -->
+    <header class="glass rounded-2xl p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xl">
+      <div class="flex items-center gap-4">
+        <div class="relative shrink-0">
+          <img
+            id="botHeadImg"
+            src="https://mc-heads.net/avatar/Steve/64"
+            alt="Bot Avatar"
+            class="w-14 h-14 rounded-xl border-2 border-amber-500/60 bg-black/50 pixelated shadow-lg"
+          />
+          <span id="botStatusDot" class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-rose-500 border-2 border-[#090b10]"></span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <h1 class="text-xl font-black tracking-tight uppercase text-white">Bluxmart Wispbyte Node</h1>
+            <span id="botOnlineBadge" class="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
+              CONNECTING...
+            </span>
+            <span id="safetyBadge" class="text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              🛡️ 5-Block Radar: Ready
+            </span>
+          </div>
+          <p class="text-xs text-gray-400 mt-1 font-mono">
+            Bot IGN: <strong id="botIgnText" class="text-amber-400">--</strong> · Server: <strong id="mcServerText" class="text-white">donutsmp.net</strong> · Pos: <span id="botPosText" class="text-gray-300">--</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Cloud Sync Status + Quick Actions -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <div class="bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs">
+          <div class="flex items-center gap-2">
+            <span id="syncDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="font-bold text-gray-200">bluxmart.com Sync</span>
+          </div>
+          <p id="lastSyncText" class="text-[10px] text-gray-400 font-mono mt-0.5">Polling every 5s...</p>
+        </div>
+
+        <button onclick="triggerCloudSync()" class="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition cursor-pointer shadow-lg">
+          🔄 Sync bluxmart.com
+        </button>
+        <button onclick="botCommand('/home')" class="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs uppercase tracking-wider border border-white/10 transition cursor-pointer">
+          🏠 Bot /home
+        </button>
+        <button onclick="reconnectBot()" class="px-3.5 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-xs uppercase tracking-wider border border-rose-500/30 transition cursor-pointer">
+          🔌 Reconnect
+        </button>
+      </div>
+    </header>
+
+    <!-- Microsoft Auth Banner (Hidden unless Microsoft Device Code is pending) -->
+    <div id="msaBanner" class="hidden rounded-2xl p-5 bg-sky-500/15 border-2 border-sky-400/50 shadow-xl">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span class="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-sky-400 text-black">Microsoft Login Required</span>
+          <h2 class="text-lg font-black text-white mt-1">Link Your DonutSMP Bot Minecraft Account</h2>
+          <p class="text-xs text-sky-200 mt-0.5">Open the Microsoft verification page and enter the 8-character code below to sign in your bot on Wispbyte:</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <code id="msaCodeText" class="text-2xl font-black font-mono tracking-widest px-4 py-2 rounded-xl bg-black/60 text-amber-400 border border-amber-400/40 select-all">--------</code>
+          <a id="msaLinkBtn" href="https://www.microsoft.com/link" target="_blank" class="px-4 py-3 rounded-xl bg-sky-400 hover:bg-sky-300 text-black font-black text-xs uppercase tracking-wider">
+            Open microsoft.com/link ↗
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI Stats Row -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="glass rounded-2xl p-4">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Pending Deliveries</span>
+        <div class="flex items-baseline justify-between mt-1">
+          <span id="statPending" class="text-3xl font-black text-amber-400 font-mono">0</span>
+          <span class="text-[10px] text-amber-300/80 font-mono">In Queue</span>
+        </div>
+      </div>
+      <div class="glass rounded-2xl p-4">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Completed Orders</span>
+        <div class="flex items-baseline justify-between mt-1">
+          <span id="statCompleted" class="text-3xl font-black text-emerald-400 font-mono">0</span>
+          <span class="text-[10px] text-emerald-300/80 font-mono">Delivered</span>
+        </div>
+      </div>
+      <div class="glass rounded-2xl p-4">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Bot Inventory Spawners</span>
+        <div class="flex items-baseline justify-between mt-1">
+          <span id="statSpawners" class="text-3xl font-black text-indigo-400 font-mono">0</span>
+          <span class="text-[10px] text-gray-400 font-mono">+ EnderChest Auto-Pull</span>
+        </div>
+      </div>
+      <div class="glass rounded-2xl p-4">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Bot Inventory Elytras</span>
+        <div class="flex items-baseline justify-between mt-1">
+          <span id="statElytras" class="text-3xl font-black text-purple-400 font-mono">0</span>
+          <span class="text-[10px] text-gray-400 font-mono">+ EnderChest Auto-Pull</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Grid: Manual Dispatch + Bot Command Bar (Left) & Delivery Queue Table (Right) -->
+    <div class="grid lg:grid-cols-[360px_1fr] gap-6">
+
+      <!-- Left Column: Test / Manual Dispatch + In-Game Chat Sender -->
+      <div class="space-y-6">
+        <!-- Manual Order Card -->
+        <div class="glass rounded-2xl p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-black uppercase tracking-wider text-white">⚡ Manual / Test Delivery</h2>
+            <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">Instant Queue</span>
+          </div>
+
+          <!-- Live Buyer Minecraft Head Preview -->
+          <div class="flex items-center gap-3 p-3 rounded-xl bg-black/40 border border-white/10">
+            <img
+              id="previewBuyerHead"
+              src="https://mc-heads.net/avatar/Steve/48"
+              alt="Buyer Head"
+              class="w-11 h-11 rounded-lg border border-amber-400/50 pixelated bg-black"
+            />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <span id="previewBuyerIgn" class="text-xs font-black font-mono text-white truncate">Steve</span>
+                <span id="previewDeliveryMode" class="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-400 text-black">
+                  💸 Money Offline OK
+                </span>
+              </div>
+              <p id="previewRuleDesc" class="text-[10px] text-gray-400 leading-snug mt-0.5">
+                Money is sent via /pay even if offline. Non-money items require buyer to be in-game!
+              </p>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label class="text-[11px] font-bold uppercase text-gray-400 block mb-1">Buyer Minecraft Username (IGN)</label>
+              <input
+                id="inputMcIgn"
+                type="text"
+                placeholder="e.g. Notch"
+                oninput="updateBuyerPreview()"
+                class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-amber-400"
+              />
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-[10px] font-bold uppercase text-gray-400 block mb-1">Money ($)</label>
+                <input
+                  id="inputMoney"
+                  type="number"
+                  value="50000000"
+                  min="0"
+                  step="1000000"
+                  oninput="updateBuyerPreview()"
+                  class="w-full bg-black/50 border border-white/15 rounded-xl px-2.5 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
+                />
+              </div>
+              <div>
+                <label class="text-[10px] font-bold uppercase text-gray-400 block mb-1">Spawners</label>
+                <input
+                  id="inputSpawners"
+                  type="number"
+                  value="0"
+                  min="0"
+                  oninput="updateBuyerPreview()"
+                  class="w-full bg-black/50 border border-white/15 rounded-xl px-2.5 py-2 text-xs text-indigo-300 font-mono focus:outline-none focus:border-amber-400"
+                />
+              </div>
+              <div>
+                <label class="text-[10px] font-bold uppercase text-gray-400 block mb-1">Elytras</label>
+                <input
+                  id="inputElytras"
+                  type="number"
+                  value="0"
+                  min="0"
+                  oninput="updateBuyerPreview()"
+                  class="w-full bg-black/50 border border-white/15 rounded-xl px-2.5 py-2 text-xs text-purple-300 font-mono focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            <button
+              onclick="createManualOrder()"
+              class="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider transition cursor-pointer shadow-lg"
+            >
+              🚀 Enqueue Delivery Now
+            </button>
+          </div>
+        </div>
+
+        <!-- Send Custom In-Game Command / Chat -->
+        <div class="glass rounded-2xl p-5 space-y-3">
+          <h2 class="text-sm font-black uppercase tracking-wider text-white">💬 Send In-Game Chat / Command</h2>
+          <div class="flex gap-2">
+            <input
+              id="customCmdInput"
+              type="text"
+              placeholder="/pay Steve 1000000 or /home"
+              onkeydown="if(event.key==='Enter') sendCustomCmd()"
+              class="flex-1 bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-amber-400"
+            />
+            <button
+              onclick="sendCustomCmd()"
+              class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs uppercase cursor-pointer"
+            >
+              Send
+            </button>
+          </div>
+          <div class="flex flex-wrap gap-1.5 pt-1">
+            <button onclick="botCommand('/home')" class="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 font-mono cursor-pointer">/home</button>
+            <button onclick="botCommand('/bal')" class="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 font-mono cursor-pointer">/bal</button>
+            <button onclick="depositEnderChest()" class="text-[10px] px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 font-mono cursor-pointer">Deposit Items → EnderChest</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Live Orders Queue & Console Logs -->
+      <div class="space-y-6">
+        <!-- Delivery Queue Card -->
+        <div class="glass rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-sm font-black uppercase tracking-wider text-white">📦 Live Delivery Queue (DonutSMP)</h2>
+              <p class="text-xs text-gray-400">Money orders execute immediately via <code class="font-mono text-emerald-400">/pay</code> (even offline). Item orders require buyer in-game for <code class="font-mono text-amber-400">/tpa</code>.</p>
+            </div>
+            <button onclick="fetchStatus()" class="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 font-bold cursor-pointer">
+              Refresh
+            </button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="border-b border-white/10 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                  <th class="py-2.5 pr-3">Buyer (MC Head)</th>
+                  <th class="py-2.5 px-3">Order & Rule</th>
+                  <th class="py-2.5 px-3">Contents</th>
+                  <th class="py-2.5 px-3">Status</th>
+                  <th class="py-2.5 pl-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="ordersTableBody" class="divide-y divide-white/5 text-xs">
+                <tr>
+                  <td colspan="5" class="py-8 text-center text-gray-500">Loading delivery queue...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Live Terminal Console Logs -->
+        <div class="glass rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-xs font-black uppercase tracking-wider text-gray-300 font-mono">🖥️ Live Wispbyte Bot Terminal Logs</h2>
+            <span class="text-[10px] font-mono text-gray-500">Auto-updating every 2s</span>
+          </div>
+          <div id="logsContainer" class="bg-black/70 border border-white/10 rounded-xl p-3.5 h-56 overflow-y-auto font-mono text-[11px] space-y-1 text-gray-300">
+            <div class="text-gray-500">Connecting to Wispbyte bot log stream...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function updateBuyerPreview() {
+      const ign = document.getElementById('inputMcIgn').value.trim() || 'Steve';
+      const money = Number(document.getElementById('inputMoney').value || 0);
+      const spawners = Number(document.getElementById('inputSpawners').value || 0);
+      const elytras = Number(document.getElementById('inputElytras').value || 0);
+      const hasItems = spawners > 0 || elytras > 0;
+
+      document.getElementById('previewBuyerHead').src = `https://mc-heads.net/avatar/${encodeURIComponent(ign)}/48`;
+      document.getElementById('previewBuyerIgn').textContent = ign;
+
+      const badge = document.getElementById('previewDeliveryMode');
+      const desc = document.getElementById('previewRuleDesc');
+      if (hasItems) {
+        badge.textContent = '⚠️ Must Be In-Game';
+        badge.className = 'text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-400 text-black';
+        desc.textContent = `${ign} MUST be online in donutsmp.net to accept /tpa for items!${money > 0 ? ' (Money still sends offline via /pay)' : ''}`;
+      } else {
+        badge.textContent = '💸 Money Offline OK';
+        badge.className = 'text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-400 text-black';
+        desc.textContent = `Money-only ($${money.toLocaleString()}) sends immediately via /pay ${ign} even if offline!`;
+      }
+    }
+
+    async function apiCall(path, method = 'GET', body = null) {
+      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(path, opts);
+      return res.json();
+    }
+
+    async function fetchStatus() {
+      try {
+        const data = await apiCall('/api/dashboard/state');
+        const botIgn = data.botUsername || 'BluxmartBot';
+        document.getElementById('botIgnText').textContent = botIgn;
+        document.getElementById('mcServerText').textContent = data.mcHost || 'donutsmp.net';
+        document.getElementById('botHeadImg').src = `https://mc-heads.net/avatar/${encodeURIComponent(botIgn)}/64`;
+
+        const onlineBadge = document.getElementById('botOnlineBadge');
+        const dot = document.getElementById('botStatusDot');
+        if (data.online) {
+          onlineBadge.textContent = '🟢 ONLINE IN-GAME';
+          onlineBadge.className = 'text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+          dot.className = 'absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-400 border-2 border-[#090b10]';
+        } else {
+          onlineBadge.textContent = '🔴 OFFLINE / RECONNECTING';
+          onlineBadge.className = 'text-[11px] font-black uppercase px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30';
+          dot.className = 'absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-rose-500 border-2 border-[#090b10]';
+        }
+
+        if (data.position) {
+          document.getElementById('botPosText').textContent = `${Math.round(data.position.x)}, ${Math.round(data.position.y)}, ${Math.round(data.position.z)}`;
+        } else {
+          document.getElementById('botPosText').textContent = 'Not spawned';
+        }
+
+        const safetyBadge = document.getElementById('safetyBadge');
+        if (data.areaSafety?.safe) {
+          safetyBadge.textContent = '🛡️ 5-Block Radar: SAFE';
+          safetyBadge.className = 'text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+        } else if (data.areaSafety?.hazard && data.areaSafety.hazard.name !== 'bot_not_spawned') {
+          safetyBadge.textContent = `🚨 HAZARD: ${data.areaSafety.hazard.name} (${data.areaSafety.hazard.distance}m)`;
+          safetyBadge.className = 'text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse';
+        }
+
+        // Microsoft Device Auth Banner
+        const msaBanner = document.getElementById('msaBanner');
+        if (data.pendingMsaCode && !data.online) {
+          msaBanner.classList.remove('hidden');
+          document.getElementById('msaCodeText').textContent = data.pendingMsaCode.code;
+          document.getElementById('msaLinkBtn').href = data.pendingMsaCode.url || 'https://www.microsoft.com/link';
+        } else {
+          msaBanner.classList.add('hidden');
+        }
+
+        // Cloud Sync info
+        if (data.cloudSync) {
+          document.getElementById('lastSyncText').textContent = data.cloudSync.lastSyncAt
+            ? `Last sync: ${new Date(data.cloudSync.lastSyncAt).toLocaleTimeString()} (${data.cloudSync.totalPulled} pulled)`
+            : `Target: ${data.cloudSync.bluxmartUrl}`;
+        }
+
+        // Stats
+        document.getElementById('statPending').textContent = data.queue?.pendingOrders ?? 0;
+        document.getElementById('statCompleted').textContent = data.queue?.completedOrders ?? 0;
+        document.getElementById('statSpawners').textContent = data.inventory?.spawners ?? 0;
+        document.getElementById('statElytras').textContent = data.inventory?.elytras ?? 0;
+
+        // Render Orders Table
+        const orders = data.queue?.orders || [];
+        const tbody = document.getElementById('ordersTableBody');
+        if (orders.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-gray-500">No orders in queue yet. Buy on bluxmart.com or enqueue a test delivery on the left!</td></tr>`;
+        } else {
+          tbody.innerHTML = orders.map((o) => {
+            const hasItems = o.hasNonMoneyItems || o.spawners > 0 || o.elytras > 0 || o.otherItemsCount > 0;
+            const ruleBadge = hasItems
+              ? `<span class="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">🎮 Must Be In-Game</span>`
+              : `<span class="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">💸 Offline Money OK</span>`;
+
+            const onlinePill = o.playerOnline
+              ? `<span class="text-[9px] font-bold text-emerald-400">● In-Game Now</span>`
+              : `<span class="text-[9px] font-bold text-gray-500">○ Offline</span>`;
+
+            const parts = [];
+            if (o.moneyAmount > 0) parts.push(`<span class="text-amber-300 font-mono font-bold">$${(o.moneyAmount / 1e6).toFixed(1)}M</span> ${o.moneyDelivered ? '✅' : '⏳'}`);
+            if (o.spawners > 0) parts.push(`<span class="text-indigo-300 font-mono font-bold">${o.spawners}x Spawner</span> ${o.itemsDelivered ? '✅' : '⏳'}`);
+            if (o.elytras > 0) parts.push(`<span class="text-purple-300 font-mono font-bold">${o.elytras}x Elytra</span> ${o.itemsDelivered ? '✅' : '⏳'}`);
+            if (o.otherItemsCount > 0) parts.push(`<span class="text-sky-300 font-mono font-bold">${o.otherItemsCount}x Item</span> ${o.itemsDelivered ? '✅' : '⏳'}`);
+
+            const statusColors = {
+              completed: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+              delivering: 'bg-sky-500/20 text-sky-300 border-sky-500/30 animate-pulse',
+              waiting_for_player: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+              pending: 'bg-white/10 text-gray-300 border-white/15'
+            };
+            const stClass = statusColors[o.status] || statusColors.pending;
+
+            return `
+              <tr class="hover:bg-white/[0.02] transition">
+                <td class="py-3 pr-3">
+                  <div class="flex items-center gap-2.5">
+                    <img src="https://mc-heads.net/avatar/${encodeURIComponent(o.minecraftUsername)}/36" class="w-9 h-9 rounded-lg border border-amber-400/40 pixelated bg-black" />
+                    <div>
+                      <div class="font-mono font-black text-white text-xs">${o.minecraftUsername}</div>
+                      <div>${onlinePill}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-3 px-3">
+                  <div class="font-mono font-bold text-gray-200">#${o.orderId}</div>
+                  <div class="mt-1">${ruleBadge}</div>
+                </td>
+                <td class="py-3 px-3">
+                  <div class="space-y-0.5">${parts.join('<br/>') || o.itemsSummary || 'DonutSMP Order'}</div>
+                  ${o.lastError ? `<div class="text-[10px] text-rose-400 mt-1">${o.lastError}</div>` : ''}
+                </td>
+                <td class="py-3 px-3">
+                  <span class="text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${stClass}">
+                    ${o.status.replace(/_/g, ' ')}
+                  </span>
+                </td>
+                <td class="py-3 pl-3 text-right space-x-1">
+                  ${o.status !== 'completed' ? `
+                    <button onclick="retryOrder('${o.orderId}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[10px] uppercase cursor-pointer">Retry</button>
+                    <button onclick="completeOrder('${o.orderId}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] uppercase cursor-pointer">Done</button>
+                  ` : ''}
+                  <button onclick="deleteOrder('${o.orderId}')" class="px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 text-[10px] font-bold cursor-pointer">✕</button>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+
+        // Render Logs
+        const logsBox = document.getElementById('logsContainer');
+        if (data.logs && data.logs.length > 0) {
+          logsBox.innerHTML = data.logs.map((l) => {
+            const color = l.level === 'error' ? 'text-rose-400' : l.level === 'warn' ? 'text-amber-300' : 'text-gray-300';
+            return `<div class="${color}"><span class="text-gray-500">[${l.time}]</span> ${l.text}</div>`;
+          }).join('');
+          logsBox.scrollTop = logsBox.scrollHeight;
+        }
+      } catch (err) {
+        console.error('Dashboard poll error:', err);
+      }
+    }
+
+    async function createManualOrder() {
+      const minecraftUsername = document.getElementById('inputMcIgn').value.trim();
+      if (!minecraftUsername) return alert('Enter a Minecraft Username (IGN)!');
+      const moneyAmount = Number(document.getElementById('inputMoney').value || 0);
+      const spawners = Number(document.getElementById('inputSpawners').value || 0);
+      const elytras = Number(document.getElementById('inputElytras').value || 0);
+      await apiCall('/api/dashboard/order', 'POST', {
+        minecraftUsername,
+        moneyAmount,
+        spawners,
+        elytras
+      });
+      fetchStatus();
+    }
+
+    async function retryOrder(orderId) {
+      await apiCall('/api/dashboard/retry', 'POST', { orderId });
+      fetchStatus();
+    }
+
+    async function completeOrder(orderId) {
+      await apiCall('/api/dashboard/complete', 'POST', { orderId });
+      fetchStatus();
+    }
+
+    async function deleteOrder(orderId) {
+      await apiCall('/api/dashboard/delete', 'POST', { orderId });
+      fetchStatus();
+    }
+
+    async function triggerCloudSync() {
+      await apiCall('/api/dashboard/sync-now', 'POST');
+      fetchStatus();
+    }
+
+    async function botCommand(cmd) {
+      await apiCall('/api/dashboard/command', 'POST', { command: cmd });
+      fetchStatus();
+    }
+
+    async function sendCustomCmd() {
+      const input = document.getElementById('customCmdInput');
+      const cmd = input.value.trim();
+      if (!cmd) return;
+      input.value = '';
+      await botCommand(cmd);
+    }
+
+    async function depositEnderChest() {
+      await apiCall('/api/dashboard/deposit-ec', 'POST');
+      fetchStatus();
+    }
+
+    async function reconnectBot() {
+      await apiCall('/api/dashboard/reconnect', 'POST');
+      fetchStatus();
+    }
+
+    fetchStatus();
+    setInterval(fetchStatus, 2500);
+  </script>
+</body>
+</html>

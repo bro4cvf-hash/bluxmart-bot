@@ -1,0 +1,23 @@
+{
+  "name": "bluxmart-unified-wisp-server",
+  "version": "2.0.0",
+  "description": "Unified Bluxmart Discord Bot + TrafficerMC Bot + DonutSMP Auto-Delivery Server for Wispbyte",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test-safety.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.3",
+    "mineflayer": "^4.37.1",
+    "mineflayer-pathfinder": "^2.4.5",
+    "pdf-lib": "^1.17.1",
+    "prismarine-auth": "^2.5.0",
+    "prismarine-nbt": "^2.5.0",
+    "socks": "^2.8.3",
+    "vec3": "^0.1.10"
+  }
+}
