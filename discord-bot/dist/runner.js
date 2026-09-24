@@ -1,5 +1,7 @@
 "use strict";
 const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
 const Module = require("module");
 
 // Allow resolving discord.js, express, pdf-lib, dotenv from wisp-bot/node_modules, ../node_modules, or ../../bluxbot-deploy-safe/node_modules
@@ -76,17 +78,37 @@ async function resolveReviewChannels(guild, setup, sourceChannelId) {
 }
 
 async function deployCommands(token, clientId, guildId) {
-  const rest = new discord_js_1.REST({ version: "10" }).setToken(token);
-  if (guildId) {
-    await rest.put(discord_js_1.Routes.applicationGuildCommands(clientId, guildId), {
-      body: commands_1.commands,
-    });
-    console.log("[Discord Bot] Guild slash commands updated");
-  } else {
-    await rest.put(discord_js_1.Routes.applicationCommands(clientId), {
-      body: commands_1.commands,
-    });
-    console.log("[Discord Bot] Global slash commands updated");
+  try {
+    const dataDir = path.join(process.cwd(), "data");
+    const cacheFile = path.join(dataDir, "commands-deploy-cache.json");
+    const hash = crypto.createHash("sha256").update(JSON.stringify({ clientId, guildId, commands: commands_1.commands })).digest("hex");
+    if (fs.existsSync(cacheFile)) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+        if (cached && cached.hash === hash) {
+          console.log("[Discord Bot] Slash commands up-to-date (skipping deploy)");
+          return;
+        }
+      } catch {}
+    }
+    const rest = new discord_js_1.REST({ version: "10" }).setToken(token);
+    if (guildId) {
+      await rest.put(discord_js_1.Routes.applicationGuildCommands(clientId, guildId), {
+        body: commands_1.commands,
+      });
+      console.log("[Discord Bot] Guild slash commands updated");
+    } else {
+      await rest.put(discord_js_1.Routes.applicationCommands(clientId), {
+        body: commands_1.commands,
+      });
+      console.log("[Discord Bot] Global slash commands updated");
+    }
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(cacheFile, JSON.stringify({ hash, deployedAt: new Date().toISOString() }));
+    } catch {}
+  } catch (e) {
+    console.warn("[Discord Bot deployCommands warning]", e.message);
   }
 }
 

@@ -56,6 +56,13 @@ exports.ROLE_ORDER_TOP_FIRST = [
     'Muted',
 ];
 // Hoisted (separate sidebar groups). Muted is NEVER hoisted.
+const MUTED_TEXT_DENY = [
+    discord_js_1.PermissionFlagsBits.SendMessages,
+    discord_js_1.PermissionFlagsBits.AddReactions,
+    discord_js_1.PermissionFlagsBits.CreatePublicThreads,
+    discord_js_1.PermissionFlagsBits.CreatePrivateThreads,
+    discord_js_1.PermissionFlagsBits.SendMessagesInThreads,
+];
 const HOIST_NAMES = [
     'Owner',
     'Admin',
@@ -507,7 +514,7 @@ async function syncGuild(guild) {
                         ow.push({ id: r.id, allow: [discord_js_1.PermissionFlagsBits.ViewChannel, discord_js_1.PermissionFlagsBits.SendMessages, discord_js_1.PermissionFlagsBits.ReadMessageHistory] });
                     }
                     if (mutedRole)
-                        ow.push({ id: mutedRole.id, deny: [discord_js_1.PermissionFlagsBits.SendMessages] });
+                        ow.push({ id: mutedRole.id, deny: MUTED_TEXT_DENY });
                     return ow;
                 }
                 if (isReadonly) {
@@ -531,7 +538,7 @@ async function syncGuild(guild) {
                         ow.push({
                             id: mutedRole.id,
                             allow: [discord_js_1.PermissionFlagsBits.ViewChannel],
-                            deny: [discord_js_1.PermissionFlagsBits.SendMessages, discord_js_1.PermissionFlagsBits.AddReactions],
+                            deny: MUTED_TEXT_DENY,
                         });
                     }
                     return ow;
@@ -676,7 +683,7 @@ async function syncGuild(guild) {
             overwrites.push({
                 id: mutedRole.id,
                 allow: [discord_js_1.PermissionFlagsBits.ViewChannel],
-                deny: [discord_js_1.PermissionFlagsBits.SendMessages, discord_js_1.PermissionFlagsBits.AddReactions],
+                deny: MUTED_TEXT_DENY,
             });
         }
         // The bot may not have a staff role, but it must be able to publish to the
@@ -760,16 +767,20 @@ async function syncGuild(guild) {
             }
             else if (channel.isTextBased() && !channel.isDMBased()) {
                 const deny = ow?.deny.bitfield ?? 0n;
-                const needSend = (deny & discord_js_1.PermissionFlagsBits.SendMessages) === 0n;
-                if (!ow || needSend) {
-                    await channel.permissionOverwrites.edit(mutedRole, {
-                        SendMessages: false,
-                        AddReactions: false,
-                        CreatePublicThreads: false,
-                        CreatePrivateThreads: false,
-                        SendMessagesInThreads: false,
-                    });
-                    markRepaired();
+                const viewDenied = (deny & discord_js_1.PermissionFlagsBits.ViewChannel) !== 0n;
+                if (!viewDenied) {
+                    const needSend = (deny & discord_js_1.PermissionFlagsBits.SendMessages) === 0n;
+                    const needReact = (deny & discord_js_1.PermissionFlagsBits.AddReactions) === 0n;
+                    if (!ow || needSend || needReact) {
+                        await channel.permissionOverwrites.edit(mutedRole, {
+                            SendMessages: false,
+                            AddReactions: false,
+                            CreatePublicThreads: false,
+                            CreatePrivateThreads: false,
+                            SendMessagesInThreads: false,
+                        });
+                        markRepaired();
+                    }
                 }
             }
         }
@@ -921,6 +932,7 @@ async function syncGuild(guild) {
         logChannelId,
         ticketCategoryId,
         autoRoleId: memberRole?.id,
+        templateRevision: await templateRevision(),
         updatedAt: new Date().toISOString(),
     };
     await (0, store_1.saveGuildSetup)(state);
@@ -973,6 +985,43 @@ function queueGuildSync(guild, reason = 'scheduled') {
         }
         if (!guild.members.me) {
             await refreshWithTimeout(guild.members.fetchMe(), `member refresh for ${guild.id}`);
+        }
+        if (reason === 'startup') {
+            try {
+                const prevSetup = await (0, store_1.getGuildSetup)(guild.id).catch(() => null);
+                if (prevSetup && prevSetup.roles && prevSetup.channels) {
+                    const tpl = await (0, botConfig_1.getTemplate)().catch(() => null);
+                    const currentRev = await templateRevision();
+                    const roleDefs = (tpl?.roles && tpl.roles.length > 0) ? tpl.roles : exports.ROLE_ORDER_TOP_FIRST.map((n) => ({ name: n }));
+                    const structure = (tpl?.structure && tpl.structure.length > 0) ? tpl.structure : [];
+                    
+                    const rolesOk = roleDefs.every((r) => {
+                        const rid = prevSetup.roles[r.name];
+                        return rid && guild.roles.cache.has(rid);
+                    });
+                    const channelsOk = structure.every((b) => (b.channels || []).every((ch) => {
+                        const cid = prevSetup.channels[ch.key];
+                        return cid && guild.channels.cache.has(cid);
+                    }));
+
+                    if (rolesOk && channelsOk) {
+                        if (prevSetup.templateRevision !== currentRev) {
+                            prevSetup.templateRevision = currentRev;
+                            await (0, store_1.saveGuildSetup)(prevSetup).catch(() => {});
+                        }
+                        console.log(`[sync] ${guild.name ?? guild.id}: up-to-date (no changes detected, skipping startup sync)`);
+                        return {
+                            guildId: guild.id,
+                            created: 0,
+                            repaired: 0,
+                            roles: Object.keys(prevSetup.roles).length,
+                            channels: Object.keys(prevSetup.channels).length,
+                        };
+                    }
+                }
+            } catch (err) {
+                console.warn('[sync] startup check warning:', err?.message || err);
+            }
         }
         console.log(`[sync] reconciling ${guild.name ?? guild.id}`);
         const result = await refreshWithTimeout(syncGuild(guild), `reconciliation for ${guild.id}`, 60000);

@@ -63,8 +63,6 @@ const {
   goals: { GoalBlock, GoalNear, GoalFollow }
 } = resolvePkg('mineflayer-pathfinder')
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-
 // =============================================================================
 // 1. PERSISTENT STORE (Compatible with electron-store dot-path get/set/delete)
 // =============================================================================
@@ -1215,7 +1213,7 @@ function readJsonBody(req) {
   })
 }
 
-const server = http.createServer(async (req, res) => {
+const handleHttpRequest = async (req, res) => {
   const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const pathname = decodeURIComponent(urlObj.pathname)
 
@@ -1351,12 +1349,30 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 404, { error: 'Not Found' })
   })
   req.pipe(proxyReq)
-})
+}
 
-const PORT = Number(process.env.PORT || process.env.SERVER_PORT || 3000)
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Wispbyte] Unified TrafficerMC + Bluxmart Auto-Delivery + Bluxbot Discord Server listening on http://0.0.0.0:${PORT}`)
-})
+const PRIMARY_PORT = Number(process.env.SERVER_PORT || process.env.WEB_PORT || process.env.APP_PORT || process.env.PORT || 9843)
+const candidatePorts = Array.from(
+  new Set(
+    [PRIMARY_PORT, 9843, Number(process.env.PORT), Number(process.env.SERVER_PORT), 25575].filter(
+      (p) => Number.isFinite(p) && p > 0 && p !== Number(process.env.DASHBOARD_PORT || 3001)
+    )
+  )
+)
+
+const activeServers = []
+for (const listenPort of candidatePorts) {
+  const srv = http.createServer(handleHttpRequest)
+  srv.on('error', (err) => {
+    if (listenPort === PRIMARY_PORT) {
+      console.error(`[Wispbyte] HTTP server error on port ${listenPort}:`, err.message)
+    }
+  })
+  srv.listen(listenPort, '0.0.0.0', () => {
+    console.log(`[Wispbyte] Unified TrafficerMC + Bluxmart Auto-Delivery + Bluxbot Discord Server listening on http://0.0.0.0:${listenPort}`)
+  })
+  activeServers.push(srv)
+}
 
 process.on('uncaughtException', (err) => {
   console.log(err)

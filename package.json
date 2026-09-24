@@ -19,5 +19,8 @@
     "prismarine-nbt": "^2.5.0",
     "socks": "^2.8.3",
     "vec3": "^0.1.10"
+  },
+  "overrides": {
+    "axios": "^1.12.0"
   }
 }

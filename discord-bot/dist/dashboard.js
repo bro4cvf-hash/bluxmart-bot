@@ -301,8 +301,8 @@ async function startDashboard() {
     // index:false ensures index.html is only served via the auth-gated GET / above.
     app.use(express_1.default.static(publicDir, { maxAge: '1h', index: false }));
     app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
-    app.listen(port, () => {
-        console.log(`[dashboard] http://localhost:${port} (login with DASHBOARD_USER)`);
+    app.listen(port, '0.0.0.0', () => {
+        console.log(`[dashboard] http://0.0.0.0:${port} (login with DASHBOARD_USER)`);
     });
 }
 function crypto_tsafeEqual(a, b) {
