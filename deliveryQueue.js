@@ -7,18 +7,21 @@ import {
   matchesCatalogCategory
 } from './enderchest.js'
 
-const QUEUE_FILE = path.resolve('./orders-queue.json')
+const DEFAULT_QUEUE_FILE = path.resolve('./delivery-queue.json')
+const FALLBACK_QUEUE_FILE = path.resolve('./orders-queue.json')
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export class DeliveryQueueManager {
   constructor(botGetter, config = {}) {
     this.getBot = botGetter
+    this.queueFilePath = config.queueFilePath || process.env.QUEUE_FILE_PATH || DEFAULT_QUEUE_FILE
     this.safeReturnCommand = config.safeReturnCommand || process.env.SAFE_RETURN_COMMAND || '/home'
     this.safetyRadius = Number(config.safetyRadius || process.env.SAFETY_RADIUS || 5)
     this.tpaTimeoutMs = Number(config.tpaTimeoutMs || process.env.TPA_TIMEOUT_MS || 60000)
     this.maxRetries = Number(config.maxRetries || process.env.MAX_DELIVERY_RETRIES || 5)
     this.onLog = config.onLog || ((msg) => console.log(msg))
-    this.onOrderUpdate = config.onOrderUpdate || (() => {})
+    this.onOrderUpdate = config.onOrderUpdate || config.onStatusChange || (() => {})
+    this.onStatusChange = config.onStatusChange || config.onOrderUpdate || (() => {})
     this.processing = false
     this.queue = this.loadQueue()
   }
@@ -27,36 +30,68 @@ export class DeliveryQueueManager {
     this.onLog(msg, level)
   }
 
+  async notifyUpdate(order, extra = {}) {
+    if (extra && extra.chatMessage) {
+      order.lastChatMessage = extra.chatMessage
+    }
+    if (typeof this.onOrderUpdate === 'function') {
+      try {
+        await this.onOrderUpdate(order, extra)
+      } catch (err) {
+        this.log(`[QUEUE] onOrderUpdate error: ${err.message}`, 'error')
+      }
+    }
+    if (typeof this.onStatusChange === 'function' && this.onStatusChange !== this.onOrderUpdate) {
+      try {
+        await this.onStatusChange(order, extra)
+      } catch (err) {
+        this.log(`[QUEUE] onStatusChange error: ${err.message}`, 'error')
+      }
+    }
+  }
+
   loadQueue() {
     try {
-      if (fs.existsSync(QUEUE_FILE)) {
-        return JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf8'))
+      if (fs.existsSync(this.queueFilePath)) {
+        return JSON.parse(fs.readFileSync(this.queueFilePath, 'utf8'))
+      }
+      if (fs.existsSync(FALLBACK_QUEUE_FILE)) {
+        return JSON.parse(fs.readFileSync(FALLBACK_QUEUE_FILE, 'utf8'))
       }
     } catch (err) {
-      console.error('[QUEUE] Failed to load orders-queue.json:', err.message)
+      console.error(`[QUEUE] Failed to load queue file (${this.queueFilePath}):`, err.message)
     }
     return []
   }
 
   saveQueue() {
     try {
-      fs.writeFileSync(QUEUE_FILE, JSON.stringify(this.queue, null, 2), 'utf8')
+      fs.writeFileSync(this.queueFilePath, JSON.stringify(this.queue, null, 2), 'utf8')
     } catch (err) {
-      console.error('[QUEUE] Failed to write orders-queue.json:', err.message)
+      console.error(`[QUEUE] Failed to write queue file (${this.queueFilePath}):`, err.message)
     }
   }
 
   /**
-   * Enqueues a verified Stripe order for in-game delivery.
+   * Alias for enqueueOrder to ensure seamless interoperability with index.js and webhooks.
+   */
+  enqueue(order) {
+    return this.enqueueOrder(order)
+  }
+
+  /**
+   * Enqueues a verified order for in-game delivery.
    * Deduplicates by orderId so repeated webhook retries or cloud polls never double-deliver.
    */
   enqueueOrder(order) {
-    const existing = this.queue.find((o) => o.orderId === String(order.orderId))
+    const rawId = String(order.orderId || order.id || `ord_${Date.now()}`)
+    const existing = this.queue.find((o) => (o.orderId === rawId || o.id === rawId))
     if (existing) {
       return { status: 'already_queued', order: existing }
     }
 
-    const moneyAmount = Math.max(0, Math.floor(Number(order.moneyAmount) || 0))
+    const rawUsername = String(order.minecraftUsername || order.recipient || '').trim()
+    const moneyAmount = Math.max(0, Math.floor(Number(order.moneyAmount ?? order.money) || 0))
     const spawners = Math.max(0, Math.floor(Number(order.spawners) || 0))
     const elytras = Math.max(0, Math.floor(Number(order.elytras) || 0))
     const otherItemsCount = Math.max(0, Math.floor(Number(order.otherItemsCount) || 0))
@@ -64,9 +99,12 @@ export class DeliveryQueueManager {
       Boolean(order.hasNonMoneyItems) || spawners > 0 || elytras > 0 || otherItemsCount > 0
 
     const entry = {
-      orderId: String(order.orderId),
-      minecraftUsername: String(order.minecraftUsername).trim(),
+      orderId: rawId,
+      id: rawId,
+      minecraftUsername: rawUsername,
+      recipient: rawUsername,
       moneyAmount,
+      money: moneyAmount,
       spawners,
       elytras,
       otherItemsCount,
@@ -90,6 +128,31 @@ export class DeliveryQueueManager {
     return { status: 'queued', order: entry }
   }
 
+  /**
+   * Retries an order when player joins or whispers 'claim'
+   */
+  retryPendingForPlayer(username) {
+    if (!username) return false
+    const lower = username.toLowerCase().trim()
+    const target = this.queue.find(
+      (o) =>
+        (((o.minecraftUsername && o.minecraftUsername.toLowerCase() === lower) ||
+          (o.recipient && o.recipient.toLowerCase() === lower))) &&
+        o.status !== 'completed'
+    )
+    if (target) {
+      target.status = 'pending'
+      target.attempts = 0
+      target.lastError = null
+      target.updatedAt = Date.now()
+      this.saveQueue()
+      this.log(`[QUEUE] Player ${username} requested claim. Re-queued Order #${target.orderId || target.id}`)
+      this.processNext()
+      return true
+    }
+    return false
+  }
+
   getQueueStatus() {
     const bot = this.getBot()
     const onlinePlayers = new Set(
@@ -97,17 +160,14 @@ export class DeliveryQueueManager {
     )
     return {
       processing: this.processing,
-      totalOrders: this.queue.length,
-      pendingOrders: this.queue.filter((o) => o.status !== 'completed' && o.status !== 'failed')
-        .length,
-      completedOrders: this.queue.filter((o) => o.status === 'completed').length,
-      orders: this.queue
-        .slice(-50)
-        .reverse()
-        .map((o) => ({
-          ...o,
-          playerOnline: onlinePlayers.has(o.minecraftUsername.toLowerCase())
-        }))
+      totalCount: this.queue.length,
+      pendingCount: this.queue.filter((o) => o.status === 'pending' || o.status === 'queued').length,
+      waitingCount: this.queue.filter((o) => o.status === 'waiting_for_player').length,
+      completedCount: this.queue.filter((o) => o.status === 'completed').length,
+      orders: this.queue.map((o) => ({
+        ...o,
+        isPlayerOnline: onlinePlayers.has((o.minecraftUsername || o.recipient || '').toLowerCase())
+      }))
     }
   }
 
@@ -118,14 +178,14 @@ export class DeliveryQueueManager {
 
     // Priority 1: Any order that still needs Money sent (since Money can be sent OFFLINE immediately!)
     let nextOrder = this.queue.find(
-      (o) => o.status !== 'completed' && !o.moneyDelivered && o.moneyAmount > 0
+      (o) => o.status !== 'completed' && !o.moneyDelivered && (o.moneyAmount > 0 || o.money > 0)
     )
 
     // Priority 2: Any order that needs physical items delivered (Buyer must be in-game)
     if (!nextOrder) {
       nextOrder = this.queue.find(
         (o) =>
-          (o.status === 'pending' || o.status === 'waiting_for_player') &&
+          (o.status === 'pending' || o.status === 'waiting_for_player' || o.status === 'queued') &&
           !o.itemsDelivered &&
           o.attempts < this.maxRetries
       )
@@ -148,7 +208,7 @@ export class DeliveryQueueManager {
   }
 
   async executeOrder(bot, order) {
-    const username = order.minecraftUsername
+    const username = order.minecraftUsername || order.recipient
     this.log(
       `[DELIVERY] Processing Order #${order.orderId} for ${username} (Money: $${order.moneyAmount.toLocaleString()}, Spawners: ${order.spawners}, Elytras: ${order.elytras})`
     )
@@ -164,10 +224,13 @@ export class DeliveryQueueManager {
         `/msg ${username} [Bluxmart] Paid $${order.moneyAmount.toLocaleString()} for Order #${order.orderId}!`
       )
       order.moneyDelivered = true
+      if (!order.hasNonMoneyItems) {
+        order.status = 'completed'
+      }
       order.updatedAt = Date.now()
       this.saveQueue()
 
-      await this.onOrderUpdate(order, {
+      await this.notifyUpdate(order, {
         chatMessage: order.itemsDelivered
           ? `💸 Paid $${order.moneyAmount.toLocaleString()} to ${username} via /pay! Your money-only order #${order.orderId} is now complete (no need to be online).`
           : `💸 Paid $${order.moneyAmount.toLocaleString()} to ${username} via /pay (sent offline/online)! Now waiting for ${username} to be in-game on donutsmp.net for physical item delivery.`
@@ -180,6 +243,7 @@ export class DeliveryQueueManager {
       order.attempts += 1
       order.updatedAt = Date.now()
       this.saveQueue()
+      await this.notifyUpdate(order)
 
       if (order.spawners > 0 || order.elytras > 0) {
         // Step 2a: Ensure bot is at its safe Ender Chest base first
@@ -223,8 +287,9 @@ export class DeliveryQueueManager {
         }
         order.status = 'waiting_for_player'
         order.lastError = 'Waiting for buyer to be in-game and accept /tpa'
+        order.updatedAt = Date.now()
         this.saveQueue()
-        await this.onOrderUpdate(order, {
+        await this.notifyUpdate(order, {
           chatMessage: `⚠️ We attempted /tpa ${username} on donutsmp.net for Order #${order.orderId}, but you were offline or didn't accept in time. Please log in to donutsmp.net as "${username}" (or whisper "claim" to the bot in-game) to receive your items!`
         })
         return
@@ -251,51 +316,57 @@ export class DeliveryQueueManager {
         }
         order.status = 'waiting_for_player'
         order.lastError = `Unsafe area: ${hazard.name} within ${hazard.distance} blocks`
+        order.updatedAt = Date.now()
         this.saveQueue()
-        await this.onOrderUpdate(order, {
-          chatMessage: `🚨 Safety Abort for ${username}: Detected ${hazard.name} within ${hazard.distance} blocks! Please move at least ${this.safetyRadius} blocks away from lava/campfires in-game.`
+        await this.notifyUpdate(order, {
+          chatMessage: `🚨 Safety Abort for ${username}: Detected ${hazard.name} within ${hazard.distance} blocks! Please move at least ${this.safetyRadius} blocks away from lava/campfires and whisper "claim" in-game to retry.`
         })
         return
       }
 
-      // Step 2f: Look at buyer and toss exact ordered items while continuously checking 5-block safety
-      const buyerEntity = bot.players[username]?.entity
-      if (buyerEntity) {
-        await bot.lookAt(buyerEntity.position.offset(0, 1.2, 0), true)
-        await delay(300)
-      }
+      this.log(`[DELIVERY] Area safe around ${username}. Tossing ordered items...`)
 
+      // Step 2f: Drop items
       const dropAborted = await this.tossOrderedItemsSafely(bot, username, {
         spawners: order.spawners,
         elytras: order.elytras
       })
 
       if (dropAborted) {
+        this.log(
+          `[DELIVERY] Delivery aborted during drop (player moved/left). Returning items to Ender Chest.`,
+          'warn'
+        )
         bot.chat(this.safeReturnCommand)
-        await delay(2000)
+        await delay(2500)
         await depositBackToEnderChest(bot)
         order.status = 'waiting_for_player'
-        order.lastError = 'Hazard placed during drop; evacuated to base'
+        order.lastError = 'Delivery interrupted during drop'
+        order.updatedAt = Date.now()
         this.saveQueue()
+        await this.notifyUpdate(order, {
+          chatMessage: `⚠️ Delivery interrupted while tossing items to ${username}. Whisper "claim" in-game to retry!`
+        })
         return
       }
 
       order.itemsDelivered = true
-      bot.chat(
-        `/msg ${username} [Bluxmart] ✅ Delivered your items for Order #${order.orderId}! Thank you for shopping at Bluxmart.com!`
-      )
-      await delay(500)
-      bot.chat(this.safeReturnCommand)
-    }
-
-    if (order.moneyDelivered && order.itemsDelivered) {
       order.status = 'completed'
-      order.lastError = null
       order.updatedAt = Date.now()
       this.saveQueue()
-      this.log(`[DELIVERY] ✅ Order #${order.orderId} for ${username} COMPLETED!`)
-      await this.onOrderUpdate(order, {
-        chatMessage: `✅ Order #${order.orderId} has been fully delivered in-game to ${username}! Thank you for choosing Bluxmart.com!`
+
+      this.log(
+        `[DELIVERY] ✅ Order #${order.orderId} successfully delivered to ${username}! Returning home...`,
+        'success'
+      )
+      bot.chat(this.safeReturnCommand)
+      await delay(1000)
+      bot.chat(
+        `/msg ${username} [Bluxmart] Order #${order.orderId} delivered! Thank you for buying from bluxmart.com!`
+      )
+
+      await this.notifyUpdate(order, {
+        chatMessage: `✅ Order #${order.orderId} has been successfully delivered in-game to ${username}! Enjoy your items.`
       })
     }
   }
@@ -303,18 +374,11 @@ export class DeliveryQueueManager {
   async waitForTeleport(bot, username, startBasePos, timeoutMs) {
     const startTime = Date.now()
     while (Date.now() - startTime < timeoutMs) {
-      if (!bot.entity) return false
-
-      const movedDist = bot.entity.position.distanceTo(startBasePos)
-      const buyerEntity = bot.players[username]?.entity
-      const distToBuyer = buyerEntity
-        ? bot.entity.position.distanceTo(buyerEntity.position)
-        : Infinity
-
-      if (movedDist > 8 || distToBuyer <= 7) {
+      await delay(500)
+      if (bot.entity.position.distanceTo(startBasePos) > 10) {
+        this.log(`[DELIVERY] Teleport confirmed for ${username}! Proceeding with safety check...`)
         return true
       }
-      await delay(400)
     }
     return false
   }
@@ -323,27 +387,35 @@ export class DeliveryQueueManager {
     let remainingSpawners = spawners
     let remainingElytras = elytras
 
+    const buyer = bot.players[username]?.entity
+    if (buyer) {
+      try {
+        await bot.lookAt(buyer.position.offset(0, 1.6, 0))
+      } catch {}
+    }
+
     for (const item of bot.inventory.items()) {
-      const liveCheck = checkAreaSafety(bot, this.safetyRadius, username)
-      if (!liveCheck.safe) {
-        bot.chat(this.safeReturnCommand)
-        bot.chat(
-          `/msg ${username} [Bluxmart] ⚠️ Emergency stop! ${liveCheck.hazard.name} detected within ${this.safetyRadius} blocks!`
-        )
-        return true
-      }
+      if (remainingSpawners <= 0 && remainingElytras <= 0) break
 
       if (remainingSpawners > 0 && matchesCatalogCategory(item.name, 'spawner')) {
-        const countToToss = Math.min(remainingSpawners, item.count)
-        await bot.toss(item.type, item.metadata ?? null, countToToss)
+        const countToToss = Math.min(item.count, remainingSpawners)
+        await bot.toss(item.type, null, countToToss)
         remainingSpawners -= countToToss
-        await delay(250)
+        await delay(350)
       } else if (remainingElytras > 0 && matchesCatalogCategory(item.name, 'elytra')) {
-        const countToToss = Math.min(remainingElytras, item.count)
-        await bot.toss(item.type, item.metadata ?? null, countToToss)
+        const countToToss = Math.min(item.count, remainingElytras)
+        await bot.toss(item.type, null, countToToss)
         remainingElytras -= countToToss
-        await delay(250)
+        await delay(350)
       }
+    }
+
+    if (remainingSpawners > 0 || remainingElytras > 0) {
+      this.log(
+        `[DELIVERY] Incomplete toss! Missing ${remainingSpawners}x Spawners, ${remainingElytras}x Elytras.`,
+        'warn'
+      )
+      return true
     }
 
     return false

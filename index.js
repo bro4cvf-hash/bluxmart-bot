@@ -815,6 +815,17 @@ function newBot(options) {
   bot.on('messagestr', (msg) => {
     sendEvent(bot._client.username, 'chat', msg)
   })
+  bot.on('whisper', (username, message) => {
+    const cleanMsg = (message || '').trim().toLowerCase()
+    if (cleanMsg.includes('claim') || cleanMsg.includes('order')) {
+      const retried = queueManager.retryPendingForPlayer(username)
+      if (retried) {
+        bot.chat(`/msg ${username} [Bluxmart] Claim received! Retrying your order delivery now...`)
+      } else {
+        bot.chat(`/msg ${username} [Bluxmart] No pending orders found for ${username}.`)
+      }
+    }
+  })
   bot.on('windowOpen', (window) => {
     if (!window) return
     sendInventory(bot)
@@ -1113,8 +1124,10 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
   tpaTimeoutMs: Number(process.env.TPA_WAIT_TIMEOUT_MS || 45000),
   onStatusChange: async (order) => {
     const botName = getPrimaryDeliveryBot()?._client?.username || 'Bluxmart'
-    sendEvent(botName, 'chat', `[Bluxmart] Order ${order.id} (${order.recipient}) -> ${order.status.toUpperCase()}`)
-    broadcastToRenderer('delivery_status', order.id, order.recipient, order.status)
+    const orderId = order.id || order.orderId
+    const recipient = order.recipient || order.minecraftUsername
+    sendEvent(botName, 'chat', `[Bluxmart] Order ${orderId} (${recipient}) -> ${(order.status || '').toUpperCase()}`)
+    broadcastToRenderer('delivery_status', orderId, recipient, order.status)
     await reportStatusToBluxmart(order)
     await notifyDiscordOrder(order)
   }
@@ -1127,27 +1140,43 @@ const SYNC_SECRET = process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET ||
 
 async function reportStatusToBluxmart(order) {
   try {
+    const orderId = order.orderId || order.id
+    if (!orderId) return
     await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SYNC_SECRET}`,
+        'x-bot-secret': SYNC_SECRET,
         'x-webhook-secret': SYNC_SECRET
       },
       body: JSON.stringify({
-        action: 'update',
-        id: order.id,
-        status: order.status === 'completed' ? 'completed' : order.status === 'failed' ? 'failed' : 'delivering',
-        note: order.error || `Delivered by TrafficerMC bot (${getPrimaryDeliveryBot()?._client?.username || 'bot'})`
+        orderId,
+        status: order.status,
+        moneyDelivered: Boolean(order.moneyDelivered),
+        itemsDelivered: Boolean(order.itemsDelivered),
+        chatMessage: order.lastChatMessage || (order.status === 'completed' ? `Delivered by TrafficerMC bot (${getPrimaryDeliveryBot()?._client?.username || 'bot'})` : undefined)
       })
     })
-  } catch {}
+  } catch (err) {
+    console.error('[SYNC] Failed to report status to Bluxmart:', err.message)
+  }
 }
 
 async function syncWithBluxmartCloud() {
   try {
-    const res = await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
+    const primaryBot = getPrimaryDeliveryBot()
+    const botUser = primaryBot?._client?.username || primaryBot?.username || 'bot'
+    const isOnline = Boolean(primaryBot && primaryBot.entity)
+    const url = new URL(`${BLUXMART_SITE_URL}/api/bot/sync`)
+    url.searchParams.set('botUsername', botUser)
+    url.searchParams.set('online', isOnline ? 'true' : 'false')
+
+    const res = await fetch(url.toString(), {
       method: 'GET',
       headers: {
+        'Authorization': `Bearer ${SYNC_SECRET}`,
+        'x-bot-secret': SYNC_SECRET,
         'x-webhook-secret': SYNC_SECRET,
         'Accept': 'application/json'
       }
@@ -1158,18 +1187,25 @@ async function syncWithBluxmartCloud() {
     lastSyncError = null
     if (Array.isArray(data.orders)) {
       for (const cloudOrder of data.orders) {
-        const exists = queueManager.queue.find((q) => q.id === cloudOrder.id)
-        if (!exists && cloudOrder.recipient) {
-          notify('Bluxmart Order', `New order for ${cloudOrder.recipient}`, 'success')
-          const queued = queueManager.enqueue({
-            id: cloudOrder.id,
-            recipient: cloudOrder.recipient,
-            money: Number(cloudOrder.money || 0),
+        const orderId = String(cloudOrder.orderId || cloudOrder.id || '').trim()
+        const recipient = String(cloudOrder.minecraftUsername || cloudOrder.recipient || '').trim()
+        if (!orderId || !recipient) continue
+
+        const exists = queueManager.queue.find((q) => (q.orderId || q.id) === orderId)
+        if (!exists) {
+          notify('Bluxmart Order', `New order for ${recipient}`, 'success')
+          const result = queueManager.enqueue({
+            orderId,
+            minecraftUsername: recipient,
+            moneyAmount: Number(cloudOrder.moneyAmount ?? cloudOrder.money ?? 0),
             spawners: Number(cloudOrder.spawners || 0),
             elytras: Number(cloudOrder.elytras || 0),
-            requiresInGame: Boolean(cloudOrder.requiresInGame)
+            otherItemsCount: Number(cloudOrder.otherItemsCount || 0),
+            hasNonMoneyItems: Boolean(cloudOrder.hasNonMoneyItems),
+            itemsSummary: cloudOrder.itemsSummary || ''
           })
-          await reportStatusToBluxmart({ id: cloudOrder.id, status: 'processing' })
+          const queued = result.order || result
+          await reportStatusToBluxmart({ orderId, status: 'processing' })
           await notifyDiscordOrder(queued)
         }
       }
@@ -1393,20 +1429,34 @@ const handleHttpRequest = async (req, res) => {
 
   // 4. Cloud Auto-Delivery Webhook (External API with Secret Header)
   if (req.method === 'POST' && pathname === '/api/deliver') {
-    const secret = req.headers['x-webhook-secret'] || req.headers['x-api-key']
+    const authHeader = req.headers['authorization'] || ''
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+    const secret = bearer || req.headers['x-bot-secret'] || req.headers['x-webhook-secret'] || req.headers['x-api-key']
     const hasValidSecret = secret && secret === SYNC_SECRET
     const session = getSession(req)
     if (!hasValidSecret && !session) {
       return sendJson(res, 401, { error: 'Unauthorized webhook call' })
     }
     const body = await readJsonBody(req)
-    const { id, recipient, money = 0, spawners = 0, elytras = 0 } = body || {}
-    if (!recipient || typeof recipient !== 'string') {
+    const orderId = String(body?.orderId || body?.id || `ord_${Date.now()}`).trim()
+    const recipient = String(body?.minecraftUsername || body?.recipient || '').trim()
+    const money = Number(body?.moneyAmount ?? body?.money ?? 0)
+    const spawners = Number(body?.spawners || 0)
+    const elytras = Number(body?.elytras || 0)
+
+    if (!recipient) {
       return sendJson(res, 400, { error: 'Missing or invalid Minecraft recipient username' })
     }
-    const order = queueManager.enqueue({ id, recipient: recipient.trim(), money, spawners, elytras })
+    const result = queueManager.enqueue({
+      orderId,
+      minecraftUsername: recipient,
+      moneyAmount: money,
+      spawners,
+      elytras
+    })
+    const order = result.order || result
     await notifyDiscordOrder(order)
-    broadcastToRenderer('delivery_status', order.id, order.recipient, 'queued')
+    broadcastToRenderer('delivery_status', order.id || order.orderId, order.recipient || order.minecraftUsername, 'queued')
     return sendJson(res, 202, { ok: true, message: 'Order added to delivery queue', order })
   }
 
@@ -1485,7 +1535,7 @@ const handleHttpRequest = async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/orders/retry') {
       const body = await readJsonBody(req)
-      const idx = queueManager.queue.findIndex((o) => o.id === body.id)
+      const idx = queueManager.queue.findIndex((o) => (o.id === body.id || o.orderId === body.id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
       queueManager.queue[idx].status = 'queued'
       queueManager.queue[idx].error = null
@@ -1497,7 +1547,7 @@ const handleHttpRequest = async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/orders/complete') {
       const body = await readJsonBody(req)
-      const idx = queueManager.queue.findIndex((o) => o.id === body.id)
+      const idx = queueManager.queue.findIndex((o) => (o.id === body.id || o.orderId === body.id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
       queueManager.queue[idx].status = 'completed'
       queueManager.saveQueue()
@@ -1509,7 +1559,7 @@ const handleHttpRequest = async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/orders/delete') {
       const body = await readJsonBody(req)
-      const idx = queueManager.queue.findIndex((o) => o.id === body.id)
+      const idx = queueManager.queue.findIndex((o) => (o.id === body.id || o.orderId === body.id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
       queueManager.queue.splice(idx, 1)
       queueManager.saveQueue()
