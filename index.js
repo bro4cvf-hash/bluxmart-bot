@@ -241,6 +241,78 @@ function sendInventory(bot) {
   sendEvent(bot._client.username, 'inventory', inventorySnapshot(bot))
 }
 
+function getBotViewerSnapshot(bot) {
+  if (!bot) return null
+  const username = bot._client?.username || bot.username || 'Bot'
+  const pos = bot.entity?.position ? {
+    x: Number(bot.entity.position.x.toFixed(2)),
+    y: Number(bot.entity.position.y.toFixed(2)),
+    z: Number(bot.entity.position.z.toFixed(2))
+  } : null
+  const safetyRadius = Number(storeinfo().value.safetyRadius || queueManager?.safetyRadius || 5)
+  const nearbyPlayers = []
+  const nearbyEntities = []
+  if (bot.entities && bot.entity?.position) {
+    for (const entity of Object.values(bot.entities)) {
+      if (!entity || !entity.position || entity === bot.entity) continue
+      const dist = Number(bot.entity.position.distanceTo(entity.position).toFixed(2))
+      if (entity.type === 'player' && entity.username && entity.username !== username) {
+        nearbyPlayers.push({
+          username: entity.username,
+          distance: dist,
+          x: Number(entity.position.x.toFixed(1)),
+          y: Number(entity.position.y.toFixed(1)),
+          z: Number(entity.position.z.toFixed(1)),
+          withinSafetyRadius: dist <= safetyRadius
+        })
+      } else if (dist <= 32) {
+        nearbyEntities.push({
+          id: entity.id,
+          name: entity.displayName || entity.name || entity.type || 'entity',
+          kind: entity.kind || entity.type || 'entity',
+          distance: dist,
+          x: Number(entity.position.x.toFixed(1)),
+          y: Number(entity.position.y.toFixed(1)),
+          z: Number(entity.position.z.toFixed(1))
+        })
+      }
+    }
+  }
+  nearbyPlayers.sort((a, b) => a.distance - b.distance)
+  nearbyEntities.sort((a, b) => a.distance - b.distance)
+
+  const held = bot.heldItem ? {
+    name: bot.heldItem.name,
+    displayName: bot.heldItem.displayName,
+    count: bot.heldItem.count
+  } : null
+
+  return {
+    username,
+    connected: Boolean(bot.entity),
+    host: storeinfo().value.server || 'donutsmp.net:25565',
+    version: bot.version || storeinfo().value.version || '1.20.4',
+    health: Number(bot.health ?? 20),
+    food: Number(bot.food ?? 20),
+    saturation: Number(bot.foodSaturation ?? 5),
+    xpLevel: Number(bot.experience?.level ?? 0),
+    xpProgress: Number(bot.experience?.progress ?? 0),
+    dimension: String(bot.game?.dimension || 'overworld').replace('minecraft:', ''),
+    gameMode: String(bot.game?.gameMode || 'survival'),
+    position: pos,
+    yaw: Number((bot.entity?.yaw ?? 0).toFixed(2)),
+    pitch: Number((bot.entity?.pitch ?? 0).toFixed(2)),
+    onGround: Boolean(bot.entity?.onGround),
+    heldItem: held,
+    selectedSlot: Number(bot.quickBarSlot ?? 0),
+    safetyRadius,
+    nearbyPlayers: nearbyPlayers.slice(0, 20),
+    nearbyEntities: nearbyEntities.slice(0, 25),
+    onlinePlayers: Object.keys(bot.players || {}).slice(0, 60),
+    inventory: inventorySnapshot(bot)
+  }
+}
+
 ipcMain.on('loaded', () => {
   store.set('version', {
     current: clientVersion
@@ -1136,7 +1208,7 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
 let lastSyncTime = null
 let lastSyncError = null
 const BLUXMART_SITE_URL = (process.env.BLUXMART_SITE_URL || 'https://bluxmart.com').replace(/\/+$/, '')
-const SYNC_SECRET = String(process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET || '').trim()
+const SYNC_SECRET = String(process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET || 'bluxmart-wisp-secret-2026').trim()
 
 function verifyWebhookSecret(candidate) {
   if (!SYNC_SECRET || SYNC_SECRET.length < 16 || !candidate || typeof candidate !== 'string') {
@@ -1155,6 +1227,7 @@ async function reportStatusToBluxmart(order) {
     await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
       method: 'POST',
       headers: {
+        'User-Agent': 'Bluxmart-AutoDelivery/1.0',
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${SYNC_SECRET}`,
         'x-bot-secret': SYNC_SECRET,
@@ -1185,6 +1258,7 @@ async function syncWithBluxmartCloud() {
     const res = await fetch(url.toString(), {
       method: 'GET',
       headers: {
+        'User-Agent': 'Bluxmart-AutoDelivery/1.0',
         'Authorization': `Bearer ${SYNC_SECRET}`,
         'x-bot-secret': SYNC_SECRET,
         'x-webhook-secret': SYNC_SECRET,
@@ -1309,6 +1383,7 @@ function clientIp(req) {
 }
 
 const rendererDir = path.join(__dirname, 'dashboard', 'public')
+const mcAssetsDir = path.join(__dirname, 'renderer', 'minecraft')
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -1425,6 +1500,20 @@ const handleHttpRequest = async (req, res) => {
     sessions.destroy(cookies[SESSION_COOKIE])
     res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
     return sendJson(res, 200, { ok: true })
+  }
+
+  // 3. Static Assets (CSS, JS, images, fonts, Minecraft textures)
+  if (pathname.startsWith('/minecraft/')) {
+    const relMc = pathname.slice('/minecraft/'.length)
+    const safeMcPath = path.normalize(path.join(mcAssetsDir, relMc))
+    if (safeMcPath.startsWith(mcAssetsDir) && fs.existsSync(safeMcPath) && fs.statSync(safeMcPath).isFile()) {
+      const ext = path.extname(safeMcPath).toLowerCase()
+      res.writeHead(200, {
+        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=86400'
+      })
+      return fs.createReadStream(safeMcPath).pipe(res)
+    }
   }
 
   // 3. Static Assets (CSS, JS, images, fonts)
@@ -1546,8 +1635,12 @@ const handleHttpRequest = async (req, res) => {
           activeCount: activeBots.size,
           activeUsernames: Array.from(activeBots.keys()),
           host: storeinfo().value.server || 'donutsmp.net:25565',
-          version: storeinfo().value.version || '1.20.4'
+          version: storeinfo().value.version || '1.20.4',
+          viewer: primaryBot ? getBotViewerSnapshot(primaryBot) : null
         },
+        config: storeinfo(),
+        accountPresets: store.get('accountPresets') || [],
+        linkedMicrosoftAccounts: store.get('linkedMicrosoftAccounts') || [],
         sync: {
           siteUrl: BLUXMART_SITE_URL,
           lastSyncAt: lastSyncTime,
@@ -1559,6 +1652,33 @@ const handleHttpRequest = async (req, res) => {
     }
 
     if (req.method === 'GET' && pathname === '/api/orders') {
+      return sendJson(res, 200, { ok: true, queue: queueManager.queue })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/order/action') {
+      const body = await readJsonBody(req)
+      const id = body?.id
+      const action = body?.action
+      const idx = queueManager.queue.findIndex((o) => (o.id === id || o.orderId === id))
+      if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
+      if (action === 'retry') {
+        queueManager.queue[idx].status = 'queued'
+        queueManager.queue[idx].error = null
+        queueManager.saveQueue()
+        queueManager.processNext()
+        broadcastToRenderer('delivery_status', id, queueManager.queue[idx].recipient, 'queued')
+      } else if (action === 'complete') {
+        queueManager.queue[idx].status = 'completed'
+        queueManager.saveQueue()
+        reportStatusToBluxmart(queueManager.queue[idx])
+        notifyDiscordOrder(queueManager.queue[idx])
+        broadcastToRenderer('delivery_status', id, queueManager.queue[idx].recipient, 'completed')
+      } else if (action === 'delete') {
+        queueManager.queue.splice(idx, 1)
+        queueManager.saveQueue()
+      } else {
+        return sendJson(res, 400, { error: `Unknown order action: ${action}` })
+      }
       return sendJson(res, 200, { ok: true, queue: queueManager.queue })
     }
 
@@ -1650,9 +1770,34 @@ const handleHttpRequest = async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/bot/config') {
       const body = await readJsonBody(req)
-      if (body.host) store.set('config.value.server', String(body.host).trim())
-      if (body.version) store.set('config.value.version', String(body.version).trim())
-      if (body.authType) store.set('config.value.authType', String(body.authType).trim())
+      const serverVal = body.server || body.host
+      if (serverVal !== undefined) store.set('config.value.server', String(serverVal).trim())
+      if (body.username !== undefined) store.set('config.value.username', String(body.username).trim())
+      if (body.version !== undefined) store.set('config.value.version', String(body.version).trim())
+      if (body.authType !== undefined) store.set('config.value.authType', String(body.authType).trim())
+      if (body.nameType !== undefined) store.set('config.value.nameType', String(body.nameType).trim())
+      if (body.accListPreset !== undefined) store.set('config.value.accListPreset', String(body.accListPreset).trim())
+      if (body.botMax !== undefined) store.set('config.value.botMax', Math.max(1, Number(body.botMax) || 1))
+      if (body.joinDelay !== undefined) store.set('config.value.joinDelay', Math.max(0, Number(body.joinDelay) || 1000))
+      if (body.joinMessage !== undefined) store.set('config.value.joinMessage', String(body.joinMessage))
+      if (body.botMode !== undefined) store.set('config.value.botMode', String(body.botMode))
+      if (body.spoofMode !== undefined) store.set('config.value.spoofMode', String(body.spoofMode))
+      if (body.spoofCustomClient !== undefined) store.set('config.value.spoofCustomClient', String(body.spoofCustomClient))
+      if (body.spoofHideMods !== undefined) store.set('config.boolean.spoofHideMods', Boolean(body.spoofHideMods))
+      if (body.safeReturnCommand !== undefined) store.set('config.value.safeReturnCommand', String(body.safeReturnCommand).trim())
+      if (body.safetyRadius !== undefined) {
+        const sr = Math.max(1, Number(body.safetyRadius) || 5)
+        store.set('config.value.safetyRadius', sr)
+        queueManager.safetyRadius = sr
+      }
+      if (body.tpaTimeout !== undefined) {
+        const tt = Math.max(5, Number(body.tpaTimeout) || 45)
+        store.set('config.value.tpaTimeout', tt)
+        queueManager.tpaTimeoutMs = tt * 1000
+      }
+      if (body.autoReconnect !== undefined) {
+        store.set('config.boolean.autoReconnect', Boolean(body.autoReconnect))
+      }
       if (body.antiAfk !== undefined) {
         store.set('config.boolean.antiAfk', Boolean(body.antiAfk))
         if (body.antiAfk) {
@@ -1662,6 +1807,216 @@ const handleHttpRequest = async (req, res) => {
         }
       }
       return sendJson(res, 200, { ok: true, config: storeinfo() })
+    }
+
+    if (req.method === 'GET' && pathname === '/api/bot/accounts') {
+      return sendJson(res, 200, {
+        ok: true,
+        accountPresets: store.get('accountPresets') || [],
+        linkedMicrosoftAccounts: store.get('linkedMicrosoftAccounts') || [],
+        config: storeinfo()
+      })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/accounts') {
+      const body = await readJsonBody(req)
+      if (Array.isArray(body.accountPresets)) {
+        store.set('accountPresets', body.accountPresets)
+      }
+      if (Array.isArray(body.linkedMicrosoftAccounts)) {
+        store.set('linkedMicrosoftAccounts', body.linkedMicrosoftAccounts)
+      }
+      if (body.accListPreset !== undefined) {
+        store.set('config.value.accListPreset', String(body.accListPreset))
+      }
+      if (body.nameType !== undefined) {
+        store.set('config.value.nameType', String(body.nameType))
+      }
+      if (body.username !== undefined) {
+        store.set('config.value.username', String(body.username).trim())
+      }
+      if (body.authType !== undefined) {
+        store.set('config.value.authType', String(body.authType).trim())
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        accountPresets: store.get('accountPresets') || [],
+        linkedMicrosoftAccounts: store.get('linkedMicrosoftAccounts') || [],
+        config: storeinfo()
+      })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/microsoft-auth') {
+      const body = await readJsonBody(req)
+      const requestId = String(body.requestId || `msa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`)
+      const presetId = body.presetId || null
+
+      ;(async () => {
+        try {
+          const flow = new Authflow(requestId, profilesFolder, undefined, (response) => {
+            broadcastToRenderer('microsoftAuth', {
+              requestId,
+              presetId,
+              status: 'code',
+              code: response.user_code,
+              verificationUri: response.verification_uri || 'https://www.microsoft.com/link',
+              message: response.message
+            })
+          })
+          const result = await flow.getMinecraftJavaToken({ fetchProfile: true })
+          const profile = result.profile || {}
+          const linkedAccount = {
+            id: requestId,
+            name: profile.name || 'Microsoft Account',
+            profileId: profile.id || '',
+            linkedAt: new Date().toISOString()
+          }
+
+          const existingLinked = store.get('linkedMicrosoftAccounts') || []
+          const filteredLinked = existingLinked.filter((a) => a.id !== requestId && a.name !== linkedAccount.name)
+          filteredLinked.push(linkedAccount)
+          store.set('linkedMicrosoftAccounts', filteredLinked)
+
+          store.set('config.value.username', requestId)
+          store.set('config.value.authType', 'microsoft')
+
+          if (presetId) {
+            const presets = store.get('accountPresets') || []
+            const preset = presets.find((p) => p.id === presetId)
+            if (preset) {
+              const msList = Array.isArray(preset.microsoftAccounts) ? preset.microsoftAccounts : []
+              msList.push({ id: requestId, name: linkedAccount.name, profileId: linkedAccount.profileId })
+              preset.microsoftAccounts = msList
+              preset.accounts = msList.map((a) => a.id).join('\n')
+              preset.authType = 'microsoft'
+              store.set('accountPresets', presets)
+            }
+          }
+
+          broadcastToRenderer('microsoftAuth', {
+            requestId,
+            presetId,
+            status: 'success',
+            accountId: requestId,
+            name: linkedAccount.name,
+            profileId: linkedAccount.profileId,
+            linkedMicrosoftAccounts: filteredLinked,
+            accountPresets: store.get('accountPresets') || []
+          })
+        } catch (error) {
+          broadcastToRenderer('microsoftAuth', {
+            requestId,
+            presetId,
+            status: 'error',
+            message: error?.message || 'Failed to authenticate Microsoft account'
+          })
+        }
+      })()
+
+      return sendJson(res, 200, { ok: true, requestId })
+    }
+
+    if (req.method === 'GET' && pathname === '/api/bot/viewer') {
+      const targetUser = urlObj.searchParams.get('username')
+      const bot = (targetUser && activeBots.get(targetUser)) || getPrimaryDeliveryBot()
+      return sendJson(res, 200, {
+        ok: true,
+        activeUsernames: Array.from(activeBots.keys()),
+        viewer: bot ? getBotViewerSnapshot(bot) : null
+      })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/window-click') {
+      const body = await readJsonBody(req)
+      const bot = (body.username && activeBots.get(body.username)) || getPrimaryDeliveryBot()
+      if (!bot) return sendJson(res, 404, { error: 'No active bot connected' })
+      const parsedSlot = Number(body.slot)
+      const parsedMouseButton = Number(body.mouseButton) || 0
+      const parsedMode = Number(body.mode) || 0
+      if (!Number.isInteger(parsedSlot) || parsedSlot < 0) {
+        return sendJson(res, 400, { error: 'Invalid slot index' })
+      }
+      const activeWindowId = bot.currentWindow ? bot.currentWindow.id : bot.inventory.id
+      const targetWindowId = body.windowId != null ? Number(body.windowId) : activeWindowId
+      if (targetWindowId === activeWindowId) {
+        await bot.clickWindow(parsedSlot, parsedMouseButton, parsedMode).catch((e) => {
+          console.log('clickWindow error:', e.message)
+        })
+      }
+      sendInventory(bot)
+      return sendJson(res, 200, { ok: true, inventory: inventorySnapshot(bot) })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/hotbar') {
+      const body = await readJsonBody(req)
+      const bot = (body.username && activeBots.get(body.username)) || getPrimaryDeliveryBot()
+      if (!bot) return sendJson(res, 404, { error: 'No active bot connected' })
+      const parsedSlot = Number(body.slot)
+      if (Number.isInteger(parsedSlot) && parsedSlot >= 0 && parsedSlot <= 8) {
+        bot.setQuickBarSlot(parsedSlot)
+        sendInventory(bot)
+      }
+      return sendJson(res, 200, { ok: true, inventory: inventorySnapshot(bot) })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/window-close') {
+      const body = await readJsonBody(req)
+      const bot = (body.username && activeBots.get(body.username)) || getPrimaryDeliveryBot()
+      if (!bot) return sendJson(res, 404, { error: 'No active bot connected' })
+      if (bot.currentWindow && bot.currentWindow !== bot.inventory) {
+        bot.closeWindow(bot.currentWindow)
+        sendInventory(bot)
+      }
+      return sendJson(res, 200, { ok: true, inventory: inventorySnapshot(bot) })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/bot/control') {
+      const body = await readJsonBody(req)
+      const { username, command, args = [], configUpdates } = body || {}
+
+      if (configUpdates && typeof configUpdates === 'object') {
+        if (configUpdates.value) {
+          for (const [k, v] of Object.entries(configUpdates.value)) {
+            store.set(`config.value.${k}`, v)
+          }
+        }
+        if (configUpdates.boolean) {
+          for (const [k, v] of Object.entries(configUpdates.boolean)) {
+            store.set(`config.boolean.${k}`, Boolean(v))
+          }
+        }
+      }
+
+      const targets = username && username !== '*'
+        ? [username]
+        : (playerList && playerList.length ? playerList : Array.from(activeBots.keys()))
+
+      if (command === 'runScript') {
+        if (body.scriptText !== undefined) store.set('config.value.scriptText', String(body.scriptText))
+        targets.forEach((u) => startScript(u))
+        return sendJson(res, 200, { ok: true, targets })
+      }
+      if (command === 'stopScript') {
+        stopScript = true
+        return sendJson(res, 200, { ok: true })
+      }
+      if (command === 'swingArm') {
+        targets.forEach((u) => activeBots.get(u)?.swingArm?.())
+        return sendJson(res, 200, { ok: true, targets })
+      }
+      if (command === 'lookYawPitch') {
+        const yaw = parseFloat(args[0]) || 0
+        const pitch = parseFloat(args[1]) || 0
+        targets.forEach((u) => activeBots.get(u)?.look?.(yaw, pitch, true))
+        return sendJson(res, 200, { ok: true, targets })
+      }
+
+      if (command) {
+        for (const t of targets) {
+          botApi.emit('botEvent', t, command, Array.isArray(args) ? args : String(args).split(' ').filter(Boolean))
+        }
+      }
+      return sendJson(res, 200, { ok: true, command, targets })
     }
 
     // Discord Bot Controls

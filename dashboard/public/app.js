@@ -148,6 +148,45 @@ function handleSSEEvent(channel, args) {
     appendTerminalLine(terminal, `[Order] ${args.join(' ')}`, 'success');
     appendTerminalLine(overviewTerm, `[Order] ${args.join(' ')}`, 'success');
     loadStatus();
+  } else if (channel === 'botEvent') {
+    const info = args[0] || {};
+    if (info.event === 'chat') {
+      appendTerminalLine(terminal, `[${info.id}] ${info.message}`, 'chat');
+      appendTerminalLine(overviewTerm, `[${info.id}] ${info.message}`, 'chat');
+    } else if (info.event === 'login') {
+      appendTerminalLine(terminal, `[${info.id}] Successfully connected to server!`, 'success');
+      loadStatus();
+    } else if (info.event === 'kicked') {
+      appendTerminalLine(terminal, `[${info.id}] Kicked from server: ${info.message}`, 'error');
+      loadStatus();
+    } else if (info.event === 'end') {
+      appendTerminalLine(terminal, `[${info.id}] Disconnected: ${info.message}`, 'error');
+      loadStatus();
+    } else if (info.event === 'reconnecting') {
+      appendTerminalLine(terminal, `[${info.id}] Reconnecting: ${info.message}`, 'info');
+    } else if (info.event === 'inventory') {
+      renderBotInventory(info.message);
+    } else if (info.event === 'authmsg') {
+      showMicrosoftDeviceCodeBanner(info.message, 'https://www.microsoft.com/link', `Microsoft sign-in for ${info.id}`);
+    } else if (info.event === 'easymcAuth') {
+      appendTerminalLine(terminal, `[EasyMC] Alt token required. Get one at https://easymc.io/get`, 'error');
+    }
+  } else if (channel === 'microsoftAuth') {
+    const info = args[0] || {};
+    if (info.status === 'code') {
+      showMicrosoftDeviceCodeBanner(info.code, info.verificationUri || 'https://www.microsoft.com/link', 'Sign in with your Microsoft account');
+    } else if (info.status === 'success') {
+      hideMicrosoftDeviceCodeBanner();
+      toast(`Microsoft account "${info.name}" linked successfully!`);
+      if ($('mc-username')) $('mc-username').value = info.accountId || info.name;
+      loadStatus();
+    } else if (info.status === 'error') {
+      hideMicrosoftDeviceCodeBanner();
+      toast(`Microsoft sign-in failed: ${info.message}`);
+    }
+  } else if (channel === 'notify') {
+    const [title, body, type] = args;
+    toast(`${title}: ${body}`);
   }
 }
 
@@ -226,6 +265,56 @@ async function loadStatus() {
     $('env-port').textContent = `0.0.0.0:${location.port || '9843'}`;
     $('env-mc').textContent = bot.host || 'donutsmp.net:25565';
     $('env-uptime').textContent = fmtUptime(data.uptimeSec || 0);
+
+    // Populate Active Bot Selector
+    const botSelect = $('mc-active-bot-select');
+    if (botSelect) {
+      const activeUsers = bot.activeUsernames || (bot.username ? [bot.username] : []);
+      const prevVal = botSelect.value;
+      botSelect.innerHTML = `<option value="*">All Connected Bots (${activeUsers.length})</option>` +
+        activeUsers.map((u) => `<option value="${esc(u)}">${esc(u)} (Connected)</option>`).join('');
+      if (prevVal && (prevVal === '*' || activeUsers.includes(prevVal))) {
+        botSelect.value = prevVal;
+      }
+    }
+
+    // Populate Connection Profile Inputs if not focused
+    const cfg = data.config?.value || {};
+    const cfgBool = data.config?.boolean || {};
+    const setIfClean = (id, val) => {
+      const el = $(id);
+      if (el && document.activeElement !== el && val !== undefined) {
+        if (el.type === 'checkbox') el.checked = Boolean(val);
+        else el.value = val;
+      }
+    };
+
+    setIfClean('mc-host', cfg.server || 'donutsmp.net:25565');
+    setIfClean('mc-username', cfg.username || '');
+    setIfClean('mc-auth', cfg.authType || 'microsoft');
+    setIfClean('mc-version', cfg.version || '1.20.4');
+    setIfClean('mc-bot-max', cfg.botMax || 1);
+    setIfClean('mc-joindelay', cfg.joinDelay || 1000);
+    setIfClean('mc-join-msg', cfg.joinMessage || '');
+    setIfClean('mc-name-type', cfg.nameType || 'default');
+    $('mc-name-type')?.dispatchEvent(new Event('change'));
+    setIfClean('mc-safe-cmd', cfg.safeReturnCommand || '/home');
+    setIfClean('mc-safety-radius', cfg.safetyRadius || 5);
+    setIfClean('mc-tpa-timeout', cfg.tpaTimeout || 45);
+    setIfClean('mc-antiafk-toggle', cfgBool.antiAfk !== undefined ? cfgBool.antiAfk : true);
+    setIfClean('mc-autoreconnect-toggle', cfgBool.autoReconnect !== undefined ? cfgBool.autoReconnect : true);
+
+    // Render Linked Microsoft Accounts & Account Presets
+    renderLinkedMicrosoftAccounts(data.linkedMicrosoftAccounts || []);
+    renderAccountPresets(data.accountPresets || []);
+    if (cfg.accListPreset && $('mc-acclist-preset')) {
+      $('mc-acclist-preset').value = cfg.accListPreset;
+    }
+
+    // Render Bot Viewer & Radar if data exists
+    if (bot.viewer) {
+      renderBotViewer(bot.viewer);
+    }
 
     // Render Queues
     renderDeliveryQueue();
@@ -423,8 +512,344 @@ $('manual-order-form')?.addEventListener('submit', async (e) => {
 });
 
 // =============================================================================
-// 4. Minecraft Bot Controls & Chat Console
+// 4. TrafficerMC Account Manager, Inventory Viewer, Bot Radar & Controller
 // =============================================================================
+let ACCOUNT_PRESETS = [];
+let LINKED_MS_ACCOUNTS = [];
+let SELECTED_PRESET_ID = null;
+let CURRENT_VIEWER_BOT = '*';
+let LAST_VIEWER_DATA = null;
+let RADAR_ANIM_FRAME = null;
+
+// Subnav inside Minecraft Bot View
+document.querySelectorAll('.mc-subnav-btn').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.mc-subnav-btn').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    const subId = b.dataset.mcsub;
+    document.querySelectorAll('.mc-subview').forEach((s) => s.classList.remove('active'));
+    const target = $(subId);
+    if (target) target.classList.add('active');
+    if (subId === 'mc-sub-viewer' && LAST_VIEWER_DATA) {
+      renderRadar(LAST_VIEWER_DATA);
+    }
+  });
+});
+
+// Active Bot Selector dropdown
+$('mc-active-bot-select')?.addEventListener('change', (e) => {
+  CURRENT_VIEWER_BOT = e.target.value;
+  refreshViewerData();
+});
+
+// Microsoft Device Code Banner
+function showMicrosoftDeviceCodeBanner(code, url, title) {
+  const banner = $('mc-msa-code-banner');
+  if (!banner) return;
+  banner.style.display = 'block';
+  if ($('mc-msa-code-display')) $('mc-msa-code-display').textContent = code;
+  if ($('mc-msa-banner-title') && title) $('mc-msa-banner-title').textContent = title;
+  if ($('mc-open-msa-link') && url) $('mc-open-msa-link').href = url;
+  if ($('mc-msa-status-hint')) $('mc-msa-status-hint').textContent = 'Waiting for activation on microsoft.com/link…';
+}
+
+function hideMicrosoftDeviceCodeBanner() {
+  const banner = $('mc-msa-code-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+$('btn-close-msa-banner')?.addEventListener('click', hideMicrosoftDeviceCodeBanner);
+
+$('btn-copy-msa-code')?.addEventListener('click', async () => {
+  const code = $('mc-msa-code-display')?.textContent?.trim();
+  if (!code) return;
+  await navigator.clipboard.writeText(code).catch(() => {});
+  toast(`Copied code "${code}" to clipboard!`);
+});
+
+// Link Microsoft Account API Call
+async function startMicrosoftAccountLink(presetId = null) {
+  try {
+    toast('Generating Microsoft sign-in code…');
+    const res = await api('/api/bot/microsoft-auth', {
+      method: 'POST',
+      body: JSON.stringify({ presetId })
+    });
+    showMicrosoftDeviceCodeBanner('--------', 'https://www.microsoft.com/link', 'Sign in with your Microsoft account');
+  } catch (err) {
+    toast(`Failed to start Microsoft link: ${err.message}`);
+  }
+}
+
+$('btn-quick-link-microsoft')?.addEventListener('click', () => startMicrosoftAccountLink());
+$('btn-link-ms-account-card')?.addEventListener('click', () => startMicrosoftAccountLink());
+$('btn-preset-add-ms')?.addEventListener('click', () => startMicrosoftAccountLink(SELECTED_PRESET_ID));
+
+// Account source mode toggle
+$('mc-name-type')?.addEventListener('change', (e) => {
+  const isPreset = e.target.value === 'acclist';
+  if ($('mc-preset-select-row')) $('mc-preset-select-row').style.display = isPreset ? 'block' : 'none';
+  if ($('mc-single-user-row')) $('mc-single-user-row').style.display = isPreset ? 'none' : 'grid';
+});
+
+// Linked MS Picker dropdown change
+$('mc-linked-ms-picker')?.addEventListener('change', (e) => {
+  if (e.target.value && $('mc-username')) {
+    $('mc-username').value = e.target.value;
+    if ($('mc-auth')) $('mc-auth').value = 'microsoft';
+  }
+});
+
+// Render Linked Microsoft Accounts
+function renderLinkedMicrosoftAccounts(accounts = []) {
+  LINKED_MS_ACCOUNTS = accounts;
+  const listEl = $('mc-linked-ms-list');
+  const countEl = $('mc-linked-ms-count');
+  const pickerEl = $('mc-linked-ms-picker');
+
+  if (countEl) countEl.textContent = accounts.length;
+
+  if (pickerEl) {
+    const currentVal = pickerEl.value;
+    pickerEl.innerHTML = '<option value="">Linked MS Account…</option>' +
+      accounts.map((a) => `<option value="${esc(a.id)}">${esc(a.name || a.id)}</option>`).join('');
+    if (currentVal) pickerEl.value = currentVal;
+  }
+
+  if (!listEl) return;
+  if (accounts.length === 0) {
+    listEl.innerHTML = '<div class="empty-cell" style="padding:12px">No Microsoft accounts linked yet. Click "+ Add Microsoft Account" to sign in via microsoft.com/link.</div>';
+    return;
+  }
+
+  const activeUser = $('mc-username')?.value?.trim();
+  listEl.innerHTML = accounts.map((a) => {
+    const isActive = activeUser === a.id || activeUser === a.name;
+    return `
+      <div class="linked-ms-row${isActive ? ' active-account' : ''}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <img src="https://mc-heads.net/avatar/${encodeURIComponent(a.name || 'MHF_Steve')}/28" style="width:28px;height:28px;border-radius:4px;image-rendering:pixelated" alt="${esc(a.name)}">
+          <div>
+            <strong style="color:#fff">${esc(a.name)}</strong>
+            <div class="muted" style="font-size:11px;font-family:monospace">${esc(a.id)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="selectLinkedMicrosoftAccount('${esc(a.id)}', '${esc(a.name)}')">Use for Bot</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="removeLinkedMicrosoftAccount('${esc(a.id)}')">Remove</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.selectLinkedMicrosoftAccount = function(id, name) {
+  if ($('mc-username')) $('mc-username').value = id;
+  if ($('mc-auth')) $('mc-auth').value = 'microsoft';
+  if ($('mc-name-type')) {
+    $('mc-name-type').value = 'default';
+    $('mc-name-type').dispatchEvent(new Event('change'));
+  }
+  toast(`Selected Microsoft account "${name}"`);
+  renderLinkedMicrosoftAccounts(LINKED_MS_ACCOUNTS);
+};
+
+window.removeLinkedMicrosoftAccount = async function(id) {
+  const filtered = LINKED_MS_ACCOUNTS.filter((a) => a.id !== id);
+  try {
+    await api('/api/bot/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ linkedMicrosoftAccounts: filtered })
+    });
+    renderLinkedMicrosoftAccounts(filtered);
+    toast('Removed Microsoft account');
+  } catch (err) {
+    toast(`Failed to remove: ${err.message}`);
+  }
+};
+
+// Account Presets Manager
+function renderAccountPresets(presets = []) {
+  ACCOUNT_PRESETS = presets;
+  const listEl = $('mc-preset-list');
+  const dropdownEl = $('mc-acclist-preset');
+
+  if (dropdownEl) {
+    const cur = dropdownEl.value;
+    dropdownEl.innerHTML = presets.length === 0
+      ? '<option value="">No presets created yet</option>'
+      : presets.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.authType || 'offline')})</option>`).join('');
+    if (cur) dropdownEl.value = cur;
+  }
+
+  if (!listEl) return;
+  if (presets.length === 0) {
+    listEl.innerHTML = '<div class="empty-cell" style="padding:16px">No presets yet</div>';
+    if ($('mc-preset-editor')) $('mc-preset-editor').style.display = 'none';
+    return;
+  }
+
+  listEl.innerHTML = presets.map((p) => `
+    <button type="button" class="row-card${SELECTED_PRESET_ID === p.id ? ' selected' : ''}" onclick="selectAccountPreset('${esc(p.id)}')">
+      <div class="grow">
+        <strong>${esc(p.name)}</strong>
+        <span class="muted" style="font-size:11px">${(p.accounts || '').split(/\r?\n/).filter(Boolean).length} accounts • ${esc(p.authType)}</span>
+      </div>
+      <span class="tag blue">${esc(p.authType === 'microsoft' ? 'MS' : p.authType === 'easymc' ? 'EasyMC' : 'Offline')}</span>
+    </button>
+  `).join('');
+
+  if (SELECTED_PRESET_ID && presets.some((p) => p.id === SELECTED_PRESET_ID)) {
+    selectAccountPreset(SELECTED_PRESET_ID);
+  } else if (presets[0]) {
+    selectAccountPreset(presets[0].id);
+  }
+}
+
+window.selectAccountPreset = function(id) {
+  SELECTED_PRESET_ID = id;
+  const preset = ACCOUNT_PRESETS.find((p) => p.id === id);
+  if (!preset) return;
+
+  document.querySelectorAll('#mc-preset-list .row-card').forEach((b) => b.classList.remove('selected'));
+  const editor = $('mc-preset-editor');
+  if (editor) editor.style.display = 'block';
+
+  if ($('mc-preset-name')) $('mc-preset-name').value = preset.name || 'Unnamed';
+  if ($('mc-preset-auth')) $('mc-preset-auth').value = preset.authType || 'offline';
+  if ($('mc-preset-accounts')) {
+    $('mc-preset-accounts').value = preset.accounts || '';
+    updatePresetAccountCount();
+  }
+};
+
+function updatePresetAccountCount() {
+  const txt = $('mc-preset-accounts')?.value || '';
+  const count = txt.split(/\r?\n/).filter((a) => a.trim()).length;
+  if ($('mc-preset-acc-count')) $('mc-preset-acc-count').textContent = count;
+}
+$('mc-preset-accounts')?.addEventListener('input', updatePresetAccountCount);
+
+$('btn-add-account-preset')?.addEventListener('click', () => {
+  const newId = `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  ACCOUNT_PRESETS.push({
+    id: newId,
+    name: 'New Preset',
+    authType: 'microsoft',
+    accounts: ''
+  });
+  renderAccountPresets(ACCOUNT_PRESETS);
+  selectAccountPreset(newId);
+});
+
+$('btn-save-preset')?.addEventListener('click', async () => {
+  if (!SELECTED_PRESET_ID) return;
+  const p = ACCOUNT_PRESETS.find((x) => x.id === SELECTED_PRESET_ID);
+  if (!p) return;
+
+  p.name = $('mc-preset-name')?.value.trim() || 'Unnamed';
+  p.authType = $('mc-preset-auth')?.value || 'offline';
+  p.accounts = $('mc-preset-accounts')?.value || '';
+
+  try {
+    await api('/api/bot/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ accountPresets: ACCOUNT_PRESETS })
+    });
+    renderAccountPresets(ACCOUNT_PRESETS);
+    toast(`Preset "${p.name}" saved!`);
+  } catch (err) {
+    toast(`Failed to save preset: ${err.message}`);
+  }
+});
+
+$('btn-use-preset-now')?.addEventListener('click', async () => {
+  if (!SELECTED_PRESET_ID) return;
+  try {
+    await api('/api/bot/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        accountPresets: ACCOUNT_PRESETS,
+        accListPreset: SELECTED_PRESET_ID,
+        nameType: 'acclist'
+      })
+    });
+    if ($('mc-name-type')) {
+      $('mc-name-type').value = 'acclist';
+      $('mc-name-type').dispatchEvent(new Event('change'));
+    }
+    if ($('mc-acclist-preset')) $('mc-acclist-preset').value = SELECTED_PRESET_ID;
+    toast('Account preset selected for bot spawning!');
+  } catch (err) {
+    toast(`Failed to set preset: ${err.message}`);
+  }
+});
+
+$('btn-delete-preset')?.addEventListener('click', async () => {
+  if (!SELECTED_PRESET_ID) return;
+  ACCOUNT_PRESETS = ACCOUNT_PRESETS.filter((p) => p.id !== SELECTED_PRESET_ID);
+  SELECTED_PRESET_ID = ACCOUNT_PRESETS[0]?.id || null;
+  try {
+    await api('/api/bot/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ accountPresets: ACCOUNT_PRESETS })
+    });
+    renderAccountPresets(ACCOUNT_PRESETS);
+    toast('Deleted preset');
+  } catch (err) {
+    toast(`Failed to delete preset: ${err.message}`);
+  }
+});
+
+// Save Bot Connection Config
+$('btn-save-bot-config')?.addEventListener('click', async () => {
+  const host = $('mc-host')?.value.trim();
+  const username = $('mc-username')?.value.trim();
+  const authType = $('mc-auth')?.value;
+  const nameType = $('mc-name-type')?.value;
+  const accListPreset = $('mc-acclist-preset')?.value;
+  const version = $('mc-version')?.value.trim();
+  const botMax = Number($('mc-bot-max')?.value || 1);
+  const joinDelay = Number($('mc-joindelay')?.value || 1000);
+  const joinMessage = $('mc-join-msg')?.value.trim();
+  const spoofMode = $('mc-spoof-mode')?.value;
+  const safeCmd = $('mc-safe-cmd')?.value.trim();
+  const safetyRadius = Number($('mc-safety-radius')?.value || 5);
+  const tpaTimeout = Number($('mc-tpa-timeout')?.value || 45);
+  const antiAfk = $('mc-antiafk-toggle')?.checked;
+  const autoReconnect = $('mc-autoreconnect-toggle')?.checked;
+
+  try {
+    await api('/api/bot/config', {
+      method: 'POST',
+      body: JSON.stringify({
+        server: host,
+        username,
+        authType,
+        nameType,
+        accListPreset,
+        version,
+        botMax,
+        joinDelay,
+        joinMessage,
+        spoofMode,
+        safeReturnCommand: safeCmd,
+        safetyRadius,
+        tpaTimeout,
+        antiAfk,
+        autoReconnect
+      })
+    });
+    $('bot-config-msg').innerHTML = '<div class="alert alert-ok">Bot connection settings saved!</div>';
+    setTimeout(() => { $('bot-config-msg').innerHTML = ''; }, 3000);
+    toast('Connection settings saved');
+    await loadStatus();
+  } catch (err) {
+    $('bot-config-msg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+  }
+});
+
+// Bot Action Buttons (Start, Stop, Reconnect)
 async function dispatchBotAction(action) {
   try {
     await api('/api/bot/action', {
@@ -453,7 +878,7 @@ $('btn-clear-overview-logs')?.addEventListener('click', () => {
   if (t) t.innerHTML = '<div class="terminal-line text-muted">[Console cleared]</div>';
 });
 
-// Send in-game chat or slash command
+// Chat Sender Form
 $('bot-chat-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const input = $('bot-chat-input');
@@ -472,40 +897,632 @@ $('bot-chat-form')?.addEventListener('submit', async (e) => {
   }
 });
 
-// Save Bot Config
-$('btn-save-bot-config')?.addEventListener('click', async () => {
-  const host = $('mc-host').value.trim();
-  const username = $('mc-username').value.trim();
-  const authType = $('mc-auth').value;
-  const version = $('mc-version').value.trim();
-  const joinDelay = Number($('mc-joindelay').value || 1000);
-  const safeCmd = $('mc-safe-cmd').value.trim();
-  const safetyRadius = Number($('mc-safety-radius').value || 5);
-  const tpaTimeout = Number($('mc-tpa-timeout').value || 45);
-  const antiAfk = $('mc-antiafk-toggle').checked;
-  const autoReconnect = $('mc-autoreconnect-toggle').checked;
+// -----------------------------------------------------------------------------
+// Inventory & Container GUI Viewer
+// -----------------------------------------------------------------------------
+function ensureTooltip() {
+  let el = $('itemTooltip');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'itemTooltip';
+    el.className = 'item-tooltip';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
 
+function showItemTooltip(e, item, extraText = '') {
+  if (!item) return;
+  const tip = ensureTooltip();
+  const cleanName = item.displayName || item.name.replace('minecraft:', '').replaceAll('_', ' ');
+  let html = `<div class="tooltip-name">${esc(cleanName)}${item.count > 1 ? `<span class="tooltip-count">×${item.count}</span>` : ''}</div>`;
+  if (Array.isArray(item.lore)) {
+    for (const line of item.lore) {
+      const isPrice = /\$/.test(line);
+      html += `<div class="${isPrice ? 'tooltip-price' : 'tooltip-lore'}">${esc(line)}</div>`;
+    }
+  }
+  if (extraText) {
+    html += `<div class="tooltip-lore" style="color:#94a3b8">${esc(extraText)}</div>`;
+  }
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  positionItemTooltip(e, tip);
+}
+
+function positionItemTooltip(e, tip) {
+  const pad = 14;
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + pad;
+  let y = e.clientY + pad;
+  if (x + r.width > window.innerWidth) x = e.clientX - r.width - pad;
+  if (y + r.height > window.innerHeight) y = e.clientY - r.height - pad;
+  tip.style.left = `${Math.max(4, x)}px`;
+  tip.style.top = `${Math.max(4, y)}px`;
+}
+
+function hideItemTooltip() {
+  const tip = $('itemTooltip');
+  if (tip) tip.style.display = 'none';
+}
+
+function createSlotElement(item, onClick, onRightClick, extraText = '') {
+  const div = document.createElement('div');
+  div.className = 'mc-slot';
+  if (item) {
+    const rawName = item.name.replace('minecraft:', '');
+    const img = document.createElement('img');
+    img.src = `/minecraft/textures/item/${rawName}.png`;
+    img.alt = item.displayName || rawName;
+    img.onerror = () => {
+      img.onerror = () => {
+        img.onerror = null;
+        div.innerHTML = `<span class="item-fallback">${esc(rawName.replaceAll('_', ' '))}</span>`;
+        if (item.count > 1) {
+          const cnt = document.createElement('span');
+          cnt.className = 'item-count';
+          cnt.textContent = item.count;
+          div.appendChild(cnt);
+        }
+      };
+      img.src = `/minecraft/textures/block/${rawName}.png`;
+    };
+    div.appendChild(img);
+    if (item.count > 1) {
+      const cnt = document.createElement('span');
+      cnt.className = 'item-count';
+      cnt.textContent = item.count;
+      div.appendChild(cnt);
+    }
+    div.addEventListener('mouseenter', (e) => showItemTooltip(e, item, extraText));
+    div.addEventListener('mousemove', (e) => positionItemTooltip(e, ensureTooltip()));
+    div.addEventListener('mouseleave', hideItemTooltip);
+  }
+  if (onClick) {
+    div.addEventListener('click', onClick);
+  }
+  if (onRightClick) {
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      onRightClick(e);
+    });
+  }
+  return div;
+}
+
+function renderBotInventory(snapshot) {
+  if (!snapshot) return;
+  const { username, inventory = [], hotbar = [], offhand = null, selectedSlot = 0, openWindow = null, windowId } = snapshot;
+
+  if ($('mc-inv-bot-badge')) $('mc-inv-bot-badge').textContent = `Inspecting: ${username}`;
+
+  // 1. Open Container Window Panel (Chests / Ender Chests / GUIs)
+  const openPanel = $('mc-open-window-panel');
+  const openGrid = $('mc-open-window-grid');
+  const openTitle = $('mc-open-window-title');
+  if (openWindow && openPanel && openGrid) {
+    openPanel.style.display = 'block';
+    if (openTitle) openTitle.textContent = `📦 ${openWindow.title || 'Open Container'}`;
+    openGrid.innerHTML = '';
+    (openWindow.slots || []).forEach((item, slotIdx) => {
+      const slotEl = createSlotElement(
+        item,
+        (e) => handleWindowSlotClick(username, openWindow.id, slotIdx, 0, e.shiftKey ? 1 : 0),
+        (e) => handleWindowSlotClick(username, openWindow.id, slotIdx, 1, e.shiftKey ? 1 : 0),
+        'Container Slot • Left-click: move • Shift+Click: quick-move • Right-click: split'
+      );
+      openGrid.appendChild(slotEl);
+    });
+  } else if (openPanel) {
+    openPanel.style.display = 'none';
+  }
+
+  // 2. Main 27-slot Inventory (slots 9..35)
+  const invGrid = $('mc-inventory-grid');
+  if (invGrid) {
+    invGrid.innerHTML = '';
+    inventory.forEach((item, i) => {
+      const slotIndex = 9 + i;
+      const slotEl = createSlotElement(
+        item,
+        (e) => handleWindowSlotClick(username, windowId, slotIndex, 0, e.shiftKey ? 1 : 0),
+        (e) => handleWindowSlotClick(username, windowId, slotIndex, 1, e.shiftKey ? 1 : 0),
+        'Inventory Slot • Left-click: move • Shift+Click: quick-move • Right-click: split'
+      );
+      invGrid.appendChild(slotEl);
+    });
+  }
+
+  // 3. Hotbar (slots 36..44)
+  const hotbarGrid = $('mc-hotbar-grid');
+  if (hotbarGrid) {
+    hotbarGrid.innerHTML = '';
+    hotbar.forEach((item, i) => {
+      const slotIndex = 36 + i;
+      const slotEl = createSlotElement(
+        item,
+        (e) => {
+          if (e.shiftKey) {
+            handleWindowSlotClick(username, windowId, slotIndex, 0, 1);
+          } else {
+            setHotbarSlot(username, i);
+          }
+        },
+        (e) => handleWindowSlotClick(username, windowId, slotIndex, 1, e.shiftKey ? 1 : 0),
+        `Hotbar Slot ${i + 1} • Click to equip • Shift+Click to quick-move`
+      );
+      if (i === selectedSlot) slotEl.classList.add('held');
+      hotbarGrid.appendChild(slotEl);
+    });
+  }
+
+  // 4. Offhand (slot 45)
+  const offhandEl = $('mc-offhand-slot');
+  if (offhandEl) {
+    offhandEl.innerHTML = '';
+    const offhandSlot = createSlotElement(
+      offhand,
+      (e) => handleWindowSlotClick(username, windowId, 45, 0, e.shiftKey ? 1 : 0),
+      (e) => handleWindowSlotClick(username, windowId, 45, 1, e.shiftKey ? 1 : 0),
+      'Offhand Slot (45)'
+    );
+    offhandEl.appendChild(offhandSlot);
+  }
+}
+
+async function handleWindowSlotClick(username, windowId, slot, mouseButton = 0, mode = 0) {
   try {
-    await api('/api/bot/config', {
+    const res = await api('/api/bot/window-click', {
+      method: 'POST',
+      body: JSON.stringify({ username, windowId, slot, mouseButton, mode })
+    });
+    if (res.inventory) renderBotInventory(res.inventory);
+  } catch (err) {
+    toast(`Click error: ${err.message}`);
+  }
+}
+
+async function setHotbarSlot(username, slot) {
+  try {
+    const res = await api('/api/bot/hotbar', {
+      method: 'POST',
+      body: JSON.stringify({ username, slot })
+    });
+    if (res.inventory) renderBotInventory(res.inventory);
+    toast(`Equipped Hotbar Slot ${slot + 1}`);
+  } catch (err) {
+    toast(`Hotbar error: ${err.message}`);
+  }
+}
+
+$('btn-close-open-window')?.addEventListener('click', async () => {
+  try {
+    const res = await api('/api/bot/window-close', {
+      method: 'POST',
+      body: JSON.stringify({ username: CURRENT_VIEWER_BOT === '*' ? undefined : CURRENT_VIEWER_BOT })
+    });
+    if (res.inventory) renderBotInventory(res.inventory);
+    toast('Closed container');
+  } catch (err) {
+    toast(`Failed to close container: ${err.message}`);
+  }
+});
+
+$('btn-inv-open-ec')?.addEventListener('click', async () => {
+  try {
+    await api('/api/bot/chat', { method: 'POST', body: JSON.stringify({ message: '/ec' }) });
+    toast('Executed /ec');
+  } catch (err) {
+    toast(`Failed: ${err.message}`);
+  }
+});
+
+$('btn-inv-refresh')?.addEventListener('click', refreshViewerData);
+
+$('btn-inv-drop-all')?.addEventListener('click', async () => {
+  if (!confirm('Drop all items in the bot inventory?')) return;
+  try {
+    await api('/api/bot/control', {
+      method: 'POST',
+      body: JSON.stringify({ username: CURRENT_VIEWER_BOT, command: 'dropall' })
+    });
+    toast('Dropping all items…');
+    setTimeout(refreshViewerData, 1000);
+  } catch (err) {
+    toast(`Failed: ${err.message}`);
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Minecraft Bot Viewer & 2D World Radar
+// -----------------------------------------------------------------------------
+function renderBotViewer(viewer) {
+  if (!viewer) return;
+  LAST_VIEWER_DATA = viewer;
+
+  if ($('mc-viewer-username')) $('mc-viewer-username').textContent = viewer.username || 'Not Spawned';
+  if ($('mc-viewer-state-badge')) {
+    $('mc-viewer-state-badge').textContent = viewer.connected ? 'Online' : 'Offline';
+    $('mc-viewer-state-badge').className = `badge ${viewer.connected ? 'green' : 'red'}`;
+  }
+  if ($('mc-viewer-body-img')) {
+    $('mc-viewer-body-img').src = `https://mc-heads.net/body/${encodeURIComponent(viewer.username || 'MHF_Steve')}/120`;
+  }
+  if ($('mc-viewer-dim-label')) {
+    $('mc-viewer-dim-label').textContent = `Server: ${viewer.host} • ${viewer.dimension} • ${viewer.gameMode}`;
+  }
+
+  // Vitals
+  if ($('mc-viewer-health-txt')) $('mc-viewer-health-txt').textContent = `${viewer.health} / 20`;
+  if ($('mc-viewer-health-bar')) $('mc-viewer-health-bar').style.width = `${Math.min(100, Math.max(0, (viewer.health / 20) * 100))}%`;
+
+  if ($('mc-viewer-food-txt')) $('mc-viewer-food-txt').textContent = `${viewer.food} / 20 (Sat: ${viewer.saturation})`;
+  if ($('mc-viewer-food-bar')) $('mc-viewer-food-bar').style.width = `${Math.min(100, Math.max(0, (viewer.food / 20) * 100))}%`;
+
+  if ($('mc-viewer-xp-txt')) $('mc-viewer-xp-txt').textContent = `Level ${viewer.xpLevel}`;
+  if ($('mc-viewer-xp-bar')) $('mc-viewer-xp-bar').style.width = `${Math.min(100, Math.max(0, (viewer.xpProgress || 0) * 100))}%`;
+
+  // Telemetry details
+  if (viewer.position && $('mc-viewer-pos')) {
+    $('mc-viewer-pos').textContent = `${viewer.position.x}, ${viewer.position.y}, ${viewer.position.z}`;
+  }
+  if ($('mc-viewer-rot')) $('mc-viewer-rot').textContent = `Yaw: ${viewer.yaw}° / Pitch: ${viewer.pitch}°`;
+  if ($('mc-viewer-held')) {
+    $('mc-viewer-held').textContent = viewer.heldItem ? `${viewer.heldItem.displayName || viewer.heldItem.name} ×${viewer.heldItem.count}` : 'Empty Hand';
+  }
+  if ($('mc-viewer-nearby-count')) {
+    $('mc-viewer-nearby-count').textContent = `${(viewer.nearbyPlayers || []).length} players nearby`;
+  }
+
+  // Nearby Players list
+  const pListEl = $('mc-nearby-players-list');
+  if (pListEl) {
+    const list = viewer.nearbyPlayers || [];
+    pListEl.innerHTML = list.length === 0
+      ? '<div class="empty-cell" style="padding:10px">No other players within render distance</div>'
+      : list.map((p) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#0d1320;border:1px solid ${p.withinSafetyRadius ? 'var(--danger)' : 'var(--border)'};border-radius:6px;margin-bottom:4px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <img src="https://mc-heads.net/avatar/${encodeURIComponent(p.username)}/20" style="width:20px;height:20px;border-radius:3px">
+            <strong style="color:#fff">${esc(p.username)}</strong>
+            <span class="muted" style="font-size:11px">${p.distance}m away</span>
+            ${p.withinSafetyRadius ? '<span class="tag red">Perimeter Alert</span>' : ''}
+          </div>
+          <div style="display:flex;gap:4px">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="dispatchBotControl('pathfinder', ['follow', '${esc(p.username)}'])">Follow</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="dispatchBotChat('/tpa ${esc(p.username)}')">TPA</button>
+          </div>
+        </div>
+      `).join('');
+  }
+
+  // Draw 2D Radar Canvas
+  renderRadar(viewer);
+
+  // If inventory snapshot is attached, render it as well
+  if (viewer.inventory) renderBotInventory(viewer.inventory);
+}
+
+function renderRadar(viewer) {
+  const canvas = $('mc-radar-canvas');
+  if (!canvas || !viewer) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const maxRange = 32; // 32 blocks max radius
+  const scale = (Math.min(w, h) / 2 - 16) / maxRange;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background Grid Rings
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 1;
+  [8, 16, 24, 32].forEach((r) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // Crosshairs
+  ctx.beginPath();
+  ctx.moveTo(cx, 10); ctx.lineTo(cx, h - 10);
+  ctx.moveTo(10, cy); ctx.lineTo(w - 10, cy);
+  ctx.stroke();
+
+  // Safety Radius Circle (e.g. 5 blocks)
+  const sRad = viewer.safetyRadius || 5;
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, sRad * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw Nearby Entities
+  for (const ent of viewer.nearbyEntities || []) {
+    if (!viewer.position) break;
+    const dx = ent.x - viewer.position.x;
+    const dz = ent.z - viewer.position.z;
+    const ex = cx + dx * scale;
+    const ey = cy + dz * scale;
+    if (ex >= 0 && ex <= w && ey >= 0 && ey <= h) {
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+      ctx.beginPath();
+      ctx.arc(ex, ey, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Draw Nearby Players
+  for (const p of viewer.nearbyPlayers || []) {
+    if (!viewer.position) break;
+    const dx = p.x - viewer.position.x;
+    const dz = p.z - viewer.position.z;
+    const px = cx + dx * scale;
+    const py = cy + dz * scale;
+    if (px >= 0 && px <= w && py >= 0 && py <= h) {
+      ctx.fillStyle = p.withinSafetyRadius ? '#ef4444' : '#10b981';
+      ctx.beginPath();
+      ctx.arc(px, py, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Label
+      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`${p.username} (${p.distance}m)`, px + 6, py - 4);
+    }
+  }
+
+  // Draw Bot Center Indicator (Yellow Triangle / Look Direction)
+  ctx.save();
+  ctx.translate(cx, cy);
+  // Mineflayer yaw: 0 is south, -pi/2 is east, pi is north, pi/2 is west
+  const yawAngle = -(viewer.yaw || 0);
+  ctx.rotate(yawAngle);
+
+  // Field of View Cone
+  ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, 48 * scale, -Math.PI / 4, Math.PI / 4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Bot Arrow
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.moveTo(0, 8);
+  ctx.lineTo(6, -6);
+  ctx.lineTo(0, -3);
+  ctx.lineTo(-6, -6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Click Radar to Pathfind / Walk
+$('mc-radar-canvas')?.addEventListener('click', (e) => {
+  if (!LAST_VIEWER_DATA || !LAST_VIEWER_DATA.position) return;
+  const canvas = $('mc-radar-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const maxRange = 32;
+  const scale = (Math.min(canvas.width, canvas.height) / 2 - 16) / maxRange;
+
+  const dx = (clickX - cx) / scale;
+  const dz = (clickY - cy) / scale;
+  const targetX = Math.round(LAST_VIEWER_DATA.position.x + dx);
+  const targetY = Math.round(LAST_VIEWER_DATA.position.y);
+  const targetZ = Math.round(LAST_VIEWER_DATA.position.z + dz);
+
+  dispatchBotControl('pathfinder', ['goto', String(targetX), String(targetY), String(targetZ)]);
+  toast(`Pathfinding to ${targetX} ${targetY} ${targetZ}…`);
+});
+
+$('btn-radar-stop-path')?.addEventListener('click', () => {
+  dispatchBotControl('pathfinder', ['stop']);
+  toast('Pathfinder stopped');
+});
+
+async function refreshViewerData() {
+  try {
+    const userParam = CURRENT_VIEWER_BOT !== '*' ? `?username=${encodeURIComponent(CURRENT_VIEWER_BOT)}` : '';
+    const res = await api(`/api/bot/viewer${userParam}`);
+    if (res.viewer) renderBotViewer(res.viewer);
+    toast('Bot viewer updated');
+  } catch (err) {
+    toast(`Viewer error: ${err.message}`);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// TrafficerMC Bot Controller & Scripting
+// -----------------------------------------------------------------------------
+async function dispatchBotControl(command, args = [], configUpdates = null) {
+  try {
+    const targetUser = CURRENT_VIEWER_BOT === '*' ? undefined : CURRENT_VIEWER_BOT;
+    await api('/api/bot/control', {
       method: 'POST',
       body: JSON.stringify({
-        server: host,
-        username,
-        authType,
-        version,
-        joinDelay,
-        safeReturnCommand: safeCmd,
-        safetyRadius,
-        tpaTimeout,
-        antiAfk,
-        autoReconnect
+        username: targetUser,
+        command,
+        args,
+        configUpdates
       })
     });
-    $('bot-config-msg').innerHTML = '<div class="alert alert-ok">Bot connection settings saved!</div>';
-    setTimeout(() => { $('bot-config-msg').innerHTML = ''; }, 3000);
-    toast('Settings saved');
   } catch (err) {
-    $('bot-config-msg').innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+    toast(`Control failed: ${err.message}`);
+  }
+}
+window.dispatchBotControl = dispatchBotControl;
+
+window.dispatchBotChat = async function(msg) {
+  try {
+    await api('/api/bot/chat', { method: 'POST', body: JSON.stringify({ message: msg }) });
+    toast(`Sent: ${msg}`);
+  } catch (err) {
+    toast(`Failed to send: ${err.message}`);
+  }
+};
+
+// Movement D-Pad Buttons
+document.querySelectorAll('.dpad-btn[data-move]').forEach((btn) => {
+  const moveType = btn.dataset.move;
+  btn.addEventListener('click', () => {
+    const isActive = btn.classList.toggle('active-move');
+    if (isActive) {
+      dispatchBotControl('startmove', [moveType]);
+      toast(`Started moving ${moveType}`);
+    } else {
+      dispatchBotControl('stopmove', [moveType]);
+      toast(`Stopped moving ${moveType}`);
+    }
+  });
+});
+
+$('btn-ctrl-reset-move')?.addEventListener('click', () => {
+  document.querySelectorAll('.dpad-btn[data-move]').forEach((b) => b.classList.remove('active-move'));
+  dispatchBotControl('resetmove');
+  toast('Reset all movement controls');
+});
+
+// Look Direction Buttons
+document.querySelectorAll('[data-look]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const dir = btn.dataset.look;
+    dispatchBotControl('look', [dir]);
+    toast(`Looked in direction ${dir}`);
+    setTimeout(refreshViewerData, 600);
+  });
+});
+
+// Hotbar Equip & Actions
+$('btn-ctrl-set-hotbar')?.addEventListener('click', () => {
+  const slot = $('mc-ctrl-hotbar-slot')?.value || '0';
+  dispatchBotControl('sethotbar', [slot]);
+  toast(`Equipped slot ${Number(slot) + 1}`);
+});
+$('btn-ctrl-use-held')?.addEventListener('click', () => {
+  dispatchBotControl('useheld');
+  toast('Used held item');
+});
+$('btn-ctrl-swing')?.addEventListener('click', () => {
+  dispatchBotControl('swingArm');
+  toast('Swung arm');
+});
+
+// Pathfinder Run Button
+$('btn-ctrl-run-pathfinder')?.addEventListener('click', () => {
+  const raw = $('mc-ctrl-pathfinder')?.value.trim();
+  if (!raw) return;
+  const parts = raw.split(/\s+/);
+  dispatchBotControl('pathfinder', parts);
+  toast(`Pathfinder command dispatched: ${raw}`);
+});
+
+// Slot Macros (Left Click, Right Click, Drop Slot, Close Window)
+$('btn-ctrl-win-left')?.addEventListener('click', () => {
+  const slot = $('mc-ctrl-inv-slot')?.value || '0';
+  dispatchBotControl('winclick', [slot, '0']);
+  toast(`Left clicked slot ${slot}`);
+});
+$('btn-ctrl-win-right')?.addEventListener('click', () => {
+  const slot = $('mc-ctrl-inv-slot')?.value || '0';
+  dispatchBotControl('winclick', [slot, '1']);
+  toast(`Right clicked slot ${slot}`);
+});
+$('btn-ctrl-drop-slot')?.addEventListener('click', () => {
+  const slot = $('mc-ctrl-inv-slot')?.value || '0';
+  dispatchBotControl('drop', [slot]);
+  toast(`Dropped slot ${slot}`);
+});
+$('btn-ctrl-close-win')?.addEventListener('click', () => {
+  dispatchBotControl('closewindow');
+  toast('Closed window');
+});
+
+// KillAura Toggle & Controls
+function updateKillAura() {
+  const toggle = $('mc-ctrl-killaura-toggle')?.checked || false;
+  const targetPlayer = $('mc-ka-player')?.checked || false;
+  const targetMob = $('mc-ka-mob')?.checked || false;
+  const targetAnimal = $('mc-ka-animal')?.checked || false;
+  const rotate = $('mc-ka-rotate')?.checked || false;
+  const range = Number($('mc-ka-range')?.value || 4);
+  const delay = Number($('mc-ka-delay')?.value || 10);
+
+  dispatchBotControl(null, [], {
+    boolean: {
+      killauraToggle: toggle,
+      targetPlayer,
+      targetMob,
+      targetAnimal,
+      killauraRotate: rotate
+    },
+    value: {
+      killauraRange: range,
+      killauraDelay: delay
+    }
+  });
+  toast(`KillAura ${toggle ? 'enabled' : 'disabled'}`);
+}
+
+$('mc-ctrl-killaura-toggle')?.addEventListener('change', updateKillAura);
+$('mc-ka-player')?.addEventListener('change', updateKillAura);
+$('mc-ka-mob')?.addEventListener('change', updateKillAura);
+$('mc-ka-animal')?.addEventListener('change', updateKillAura);
+$('mc-ka-rotate')?.addEventListener('change', updateKillAura);
+$('mc-ka-range')?.addEventListener('change', updateKillAura);
+$('mc-ka-delay')?.addEventListener('change', updateKillAura);
+
+// TrafficerMC Scripting Engine
+$('btn-ctrl-run-script')?.addEventListener('click', async () => {
+  const txt = $('mc-ctrl-script-text')?.value || '';
+  const onConnect = $('mc-script-on-connect')?.checked || false;
+  const onSpawn = $('mc-script-on-spawn')?.checked || false;
+
+  try {
+    await api('/api/bot/control', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: CURRENT_VIEWER_BOT === '*' ? undefined : CURRENT_VIEWER_BOT,
+        command: 'runScript',
+        scriptText: txt,
+        configUpdates: {
+          boolean: {
+            runOnConnect: onConnect,
+            runOnSpawn: onSpawn
+          },
+          value: {
+            scriptText: txt
+          }
+        }
+      })
+    });
+    toast('Running TrafficerMC script sequence…');
+  } catch (err) {
+    toast(`Failed to run script: ${err.message}`);
+  }
+});
+
+$('btn-ctrl-stop-script')?.addEventListener('click', async () => {
+  try {
+    await api('/api/bot/control', {
+      method: 'POST',
+      body: JSON.stringify({ command: 'stopScript' })
+    });
+    toast('Stopped script sequence');
+  } catch (err) {
+    toast(`Failed: ${err.message}`);
   }
 });
 
