@@ -1,7 +1,7 @@
+import crypto from 'node:crypto'
 /* eslint-disable no-case-declarations */
 import http from 'node:http'
 import path, { join } from 'node:path'
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import EventEmitter from 'node:events'
 import { fileURLToPath } from 'node:url'
@@ -1136,7 +1136,17 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
 let lastSyncTime = null
 let lastSyncError = null
 const BLUXMART_SITE_URL = (process.env.BLUXMART_SITE_URL || 'https://bluxmart.com').replace(/\/+$/, '')
-const SYNC_SECRET = process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET || 'bluxmart-wisp-secret-2026'
+const SYNC_SECRET = String(process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET || '').trim()
+
+function verifyWebhookSecret(candidate) {
+  if (!SYNC_SECRET || SYNC_SECRET.length < 16 || !candidate || typeof candidate !== 'string') {
+    return false
+  }
+  const a = Buffer.from(candidate.trim(), 'utf8')
+  const b = Buffer.from(SYNC_SECRET, 'utf8')
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
+}
 
 async function reportStatusToBluxmart(order) {
   try {
@@ -1317,11 +1327,24 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload))
 }
 
+const MAX_JSON_BODY_BYTES = 64 * 1024 // 64KB max body size
 function readJsonBody(req) {
   return new Promise((resolve) => {
     let raw = ''
-    req.on('data', (chunk) => { raw += chunk })
+    let totalBytes = 0
+    let aborted = false
+    req.on('data', (chunk) => {
+      if (aborted) return
+      totalBytes += chunk.length
+      if (totalBytes > MAX_JSON_BODY_BYTES) {
+        aborted = true
+        req.destroy()
+        return resolve({})
+      }
+      raw += chunk
+    })
     req.on('end', () => {
+      if (aborted) return
       try { resolve(raw ? JSON.parse(raw) : {}) } catch { resolve({}) }
     })
     req.on('error', () => resolve({}))
@@ -1429,14 +1452,20 @@ const handleHttpRequest = async (req, res) => {
 
   // 4. Cloud Auto-Delivery Webhook (External API with Secret Header)
   if (req.method === 'POST' && pathname === '/api/deliver') {
+    const ip = clientIp(req)
+    if (!limiter.allow(`webhook:${ip}`)) {
+      return sendJson(res, 429, { error: 'Too many failed webhook attempts. Try again later.' })
+    }
     const authHeader = req.headers['authorization'] || ''
     const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
-    const secret = bearer || req.headers['x-bot-secret'] || req.headers['x-webhook-secret'] || req.headers['x-api-key']
-    const hasValidSecret = secret && secret === SYNC_SECRET
+    const secret = String(bearer || req.headers['x-bot-secret'] || req.headers['x-webhook-secret'] || req.headers['x-api-key'] || '')
+    const hasValidSecret = verifyWebhookSecret(secret)
     const session = getSession(req)
     if (!hasValidSecret && !session) {
+      limiter.recordFailure(`webhook:${ip}`)
       return sendJson(res, 401, { error: 'Unauthorized webhook call' })
     }
+    limiter.reset(`webhook:${ip}`)
     const body = await readJsonBody(req)
     const orderId = String(body?.orderId || body?.id || `ord_${Date.now()}`).trim()
     const recipient = String(body?.minecraftUsername || body?.recipient || '').trim()
@@ -1444,8 +1473,8 @@ const handleHttpRequest = async (req, res) => {
     const spawners = Number(body?.spawners || 0)
     const elytras = Number(body?.elytras || 0)
 
-    if (!recipient) {
-      return sendJson(res, 400, { error: 'Missing or invalid Minecraft recipient username' })
+    if (!recipient || !/^\.?[a-zA-Z0-9_]{3,16}$/.test(recipient)) {
+      return sendJson(res, 400, { error: 'Missing or invalid Minecraft recipient username (3-16 alphanumeric characters only)' })
     }
     const result = queueManager.enqueue({
       orderId,

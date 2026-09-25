@@ -91,7 +91,10 @@ export class DeliveryQueueManager {
     }
 
     const rawUsername = String(order.minecraftUsername || order.recipient || '').trim()
-    const moneyAmount = Math.max(0, Math.floor(Number(order.moneyAmount ?? order.money) || 0))
+    if (!/^\.?[a-zA-Z0-9_]{3,16}$/.test(rawUsername)) {
+      throw new Error(`Invalid Minecraft username "${rawUsername}". Must be 3-16 alphanumeric/underscore characters with no spaces.`)
+    }
+    const moneyAmount = Math.max(0, Math.min(100_000_000_000, Math.floor(Number(order.moneyAmount ?? order.money) || 0)))
     const spawners = Math.max(0, Math.floor(Number(order.spawners) || 0))
     const elytras = Math.max(0, Math.floor(Number(order.elytras) || 0))
     const otherItemsCount = Math.max(0, Math.floor(Number(order.otherItemsCount) || 0))
@@ -208,7 +211,13 @@ export class DeliveryQueueManager {
   }
 
   async executeOrder(bot, order) {
-    const username = order.minecraftUsername || order.recipient
+    const username = String(order.minecraftUsername || order.recipient || '').trim()
+    if (!/^\.?[a-zA-Z0-9_]{3,16}$/.test(username)) {
+      order.status = 'failed'
+      order.lastError = 'Blocked invalid Minecraft username (command injection guard)'
+      this.saveQueue()
+      throw new Error(order.lastError)
+    }
     this.log(
       `[DELIVERY] Processing Order #${order.orderId} for ${username} (Money: $${order.moneyAmount.toLocaleString()}, Spawners: ${order.spawners}, Elytras: ${order.elytras})`
     )
