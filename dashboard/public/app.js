@@ -53,11 +53,11 @@ async function api(path, opts = {}) {
 // 1. Navigation & View Switching
 // =============================================================================
 const TITLES = {
-  overview: ['Overview', 'Unified status for Minecraft Auto-Delivery and Discord Bot'],
-  delivery: ['Auto-Delivery', 'DonutSMP queue management, live synchronization, and manual orders'],
-  botting: ['Minecraft Bot', 'TrafficerMC bot connection, anti-afk, safety controls, and live chat'],
-  discord: ['Discord Bot', 'Bluxbot server roles, channels, ticket panels, and live sync'],
-  settings: ['Security & Settings', 'Session authentication, admin password change, and security checks']
+  overview: ['Overview', 'System status and recent activity'],
+  delivery: ['Auto-Delivery', 'Order queue and cloud synchronization'],
+  botting: ['Minecraft Bot', 'Session controls, inventory, and telemetry'],
+  discord: ['Discord Bot', 'Server configuration, roles, and tickets'],
+  settings: ['Security & Settings', 'Access control and console security']
 };
 
 document.querySelectorAll('#nav .nav-btn').forEach((b) => {
@@ -104,14 +104,18 @@ $('logout')?.addEventListener('click', async () => {
 // =============================================================================
 function appendTerminalLine(consoleEl, text, type = 'info') {
   if (!consoleEl) return;
+  // Smart bottom scroll detection: only auto-scroll if user is already near bottom
+  const isNearBottom = (consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight) <= 40;
   const line = document.createElement('div');
   line.className = `terminal-line terminal-${type}`;
   const now = new Date().toTimeString().split(' ')[0];
   line.innerHTML = `<span class="terminal-time">[${now}]</span> ${esc(text)}`;
   consoleEl.appendChild(line);
-  consoleEl.scrollTop = consoleEl.scrollHeight;
   while (consoleEl.children.length > 200) {
     consoleEl.removeChild(consoleEl.firstChild);
+  }
+  if (isNearBottom) {
+    consoleEl.scrollTop = consoleEl.scrollHeight;
   }
 }
 
@@ -907,6 +911,8 @@ function ensureTooltip() {
     el.id = 'itemTooltip';
     el.className = 'item-tooltip';
     el.style.display = 'none';
+    el.style.top = '0';
+    el.style.left = '0';
     document.body.appendChild(el);
   }
   return el;
@@ -938,8 +944,9 @@ function positionItemTooltip(e, tip) {
   let y = e.clientY + pad;
   if (x + r.width > window.innerWidth) x = e.clientX - r.width - pad;
   if (y + r.height > window.innerHeight) y = e.clientY - r.height - pad;
-  tip.style.left = `${Math.max(4, x)}px`;
-  tip.style.top = `${Math.max(4, y)}px`;
+  const posX = Math.max(4, Math.round(x));
+  const posY = Math.max(4, Math.round(y));
+  tip.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
 }
 
 function hideItemTooltip() {

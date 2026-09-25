@@ -64,7 +64,7 @@
     <header class="topbar">
       <div>
         <h1 id="title">Overview</h1>
-        <p id="subtitle">Unified status for Minecraft Auto-Delivery and Discord Bot</p>
+        <p id="subtitle">System status and recent activity</p>
       </div>
       <div class="topbar-actions">
         <div class="status-pill" id="global-status-pill">
@@ -122,21 +122,11 @@
         <div class="section-head"><h2>Quick Actions</h2></div>
         <div class="card quick-actions-card">
           <div class="action-buttons">
-            <button class="btn btn-primary" id="btn-quick-start-bot">
-              <span>▶</span> Start Minecraft Bot
-            </button>
-            <button class="btn btn-danger" id="btn-quick-stop-bot">
-              <span>⏹</span> Stop Minecraft Bot
-            </button>
-            <button class="btn btn-secondary" id="btn-quick-sync-orders">
-              <span>🔄</span> Force Sync Orders
-            </button>
-            <button class="btn btn-secondary" id="btn-quick-sync-discord">
-              <span>🤖</span> Sync Discord Guild
-            </button>
-            <button class="btn btn-secondary" id="btn-quick-create-order">
-              <span>➕</span> Dispatch Test Order
-            </button>
+            <button class="btn btn-primary" id="btn-quick-start-bot">Start Minecraft Bot</button>
+            <button class="btn btn-danger" id="btn-quick-stop-bot">Stop Minecraft Bot</button>
+            <button class="btn btn-secondary" id="btn-quick-sync-orders">Force Sync Orders</button>
+            <button class="btn btn-secondary" id="btn-quick-sync-discord">Sync Discord Guild</button>
+            <button class="btn btn-secondary" id="btn-quick-create-order">Dispatch Test Order</button>
           </div>
         </div>
       </div>
@@ -179,19 +169,13 @@
 
     <!-- 2. AUTO-DELIVERY VIEW -->
     <section class="view" id="view-delivery">
-      <div class="section-head">
-        <div>
-          <h2>DonutSMP Auto-Delivery Queue</h2>
-          <p class="muted" style="margin:2px 0 0">Real-time order synchronization with Bluxmart.com and in-game bot delivery</p>
-        </div>
-        <div class="toolbar" style="margin:0">
-          <button class="btn btn-secondary" id="btn-sync-cloud-now">
-            <span>🔄</span> Sync with Bluxmart Cloud
-          </button>
-          <button class="btn btn-primary" id="btn-open-create-order-modal">
-            <span>➕</span> Create Manual Order
-          </button>
-        </div>
+      <div class="toolbar" style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-secondary" id="btn-sync-cloud-now">
+          <span>🔄</span> Sync with Bluxmart Cloud
+        </button>
+        <button class="btn btn-primary" id="btn-open-create-order-modal">
+          <span>➕</span> Create Manual Order
+        </button>
       </div>
 
       <div class="card">
@@ -240,18 +224,44 @@
 
     <!-- 3. MINECRAFT BOT (TRAFFICERMC) VIEW -->
     <section class="view" id="view-botting">
-      <div class="section-head">
-        <div>
-          <h2>Minecraft Bot Session, Accounts, Viewer &amp; Controller</h2>
-          <p class="muted" style="margin:2px 0 0">TrafficerMC account manager (Microsoft / Presets), live inventory &amp; container GUI viewer, 2D radar &amp; bot controller</p>
-        </div>
-        <div class="toolbar" style="margin:0;display:flex;gap:8px;flex-wrap:wrap">
-          <select id="mc-active-bot-select" style="width:auto;min-width:170px;padding:7px 10px" title="Active Bot to Inspect / Control">
-            <option value="*">All Connected Bots (0)</option>
-          </select>
-          <button class="btn btn-primary" id="btn-bot-start">▶ Start Bot</button>
-          <button class="btn btn-danger" id="btn-bot-stop">⏹ Stop Bot</button>
-          <button class="btn btn-secondary" id="btn-bot-reconnect">🔄 Reconnect</button>
+      <!-- Apple Pro Toolbar -->
+      <div class="pro-toolbar-container">
+        <div class="pro-toolbar">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="pro-traffic-dots">
+              <span class="dot-red"></span>
+              <span class="dot-yellow"></span>
+              <span class="dot-green"></span>
+            </div>
+            <div class="pro-toolbar-divider"></div>
+            <!-- Target Bot Scheme Selector -->
+            <div class="pro-scheme-picker">
+              <span style="font-size:13px;color:#94a3b8">🤖</span>
+              <select id="mc-active-bot-select" class="pro-select" title="Target Bot Scheme">
+                <option value="*">All Connected Bots (0)</option>
+              </select>
+            </div>
+            <!-- Segmented Bot Controls -->
+            <div class="pro-control-group">
+              <button type="button" class="btn btn-primary pro-btn pro-btn-primary" id="btn-bot-start" title="Start Bot">
+                <span>▶</span> Start
+              </button>
+              <button type="button" class="btn btn-danger pro-btn pro-btn-danger" id="btn-bot-stop" title="Stop Bot">
+                <span>⏹</span> Stop
+              </button>
+              <button type="button" class="btn btn-secondary pro-btn" id="btn-bot-reconnect" title="Reconnect Bot">
+                <span>🔄</span> Reconnect
+              </button>
+            </div>
+          </div>
+
+          <!-- Segmented Subnav Tabs -->
+          <div class="subnav-tabs apple-segmented-bar" id="mc-subnav-tabs" style="margin-bottom:0">
+            <button type="button" class="mc-subnav-btn apple-segment-btn active" data-mcsub="mc-sub-connection">🔑 Connection</button>
+            <button type="button" class="mc-subnav-btn apple-segment-btn" data-mcsub="mc-sub-inventory">🎒 Inventory</button>
+            <button type="button" class="mc-subnav-btn apple-segment-btn" data-mcsub="mc-sub-viewer">🧭 Radar</button>
+            <button type="button" class="mc-subnav-btn apple-segment-btn" data-mcsub="mc-sub-controller">🎮 Controller</button>
+          </div>
         </div>
       </div>
 
@@ -275,209 +285,219 @@
         </div>
       </div>
 
-      <!-- Sub-Navigation Tabs inside Minecraft Bot View -->
-      <div class="subnav-tabs" id="mc-subnav-tabs">
-        <button class="mc-subnav-btn active" data-mcsub="mc-sub-connection">🔑 Connection &amp; Accounts</button>
-        <button class="mc-subnav-btn" data-mcsub="mc-sub-inventory">🎒 Inventory &amp; Container Viewer</button>
-        <button class="mc-subnav-btn" data-mcsub="mc-sub-viewer">🧭 Bot Viewer &amp; Radar</button>
-        <button class="mc-subnav-btn" data-mcsub="mc-sub-controller">🎮 TrafficerMC Controller &amp; Scripting</button>
-      </div>
-
       <!-- SUBVIEW 1: CONNECTION PROFILE, MICROSOFT ACCOUNT LINKER & ACCOUNT PRESETS -->
       <div class="mc-subview active" id="mc-sub-connection">
-        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));margin-bottom:16px">
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px;align-items:stretch;margin-bottom:16px">
           <!-- Connection Profile Card -->
-          <div class="card">
-            <div class="card-header-flex">
-              <div>
-                <h3>Connection Profile</h3>
-                <p class="muted" style="margin:0">Configure target server, account source &amp; authentication</p>
+          <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;height:100%">
+            <div>
+              <div class="card-header-flex">
+                <div>
+                  <h3>Connection Profile</h3>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-quick-link-microsoft">➕ Link Microsoft Account</button>
               </div>
-              <button type="button" class="btn btn-secondary btn-sm" id="btn-quick-link-microsoft">➕ Link Microsoft Account</button>
-            </div>
-            <div id="bot-config-msg"></div>
+              <div id="bot-config-msg"></div>
 
-            <div class="form-row">
-              <div class="field">
-                <label for="mc-host">Server Address (Host:Port)</label>
-                <input type="text" id="mc-host" placeholder="donutsmp.net:25565" value="donutsmp.net:25565">
-              </div>
-              <div class="field">
-                <label for="mc-name-type">Account Source Mode</label>
-                <select id="mc-name-type">
-                  <option value="default">Single Account / Username</option>
-                  <option value="acclist">Account Preset List (Acc List)</option>
-                  <option value="random">Random String</option>
-                  <option value="legit">Legit Name Generator</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-row" id="mc-single-user-row">
-              <div class="field">
-                <label for="mc-username">Bot Username / Linked MS Account</label>
-                <div style="display:flex;gap:6px">
-                  <input type="text" id="mc-username" placeholder="Minecraft IGN, Email, or EasyMC Token">
-                  <select id="mc-linked-ms-picker" style="max-width:155px" title="Pick a linked Microsoft account">
-                    <option value="">Linked MS…</option>
+              <div class="form-row">
+                <div class="field">
+                  <label for="mc-host">Server Address (Host:Port)</label>
+                  <input type="text" id="mc-host" placeholder="donutsmp.net:25565" value="donutsmp.net:25565">
+                </div>
+                <div class="field">
+                  <label for="mc-name-type">Account Source Mode</label>
+                  <select id="mc-name-type">
+                    <option value="default">Single Account / Username</option>
+                    <option value="acclist">Account Preset List (Acc List)</option>
+                    <option value="random">Random String</option>
+                    <option value="legit">Legit Name Generator</option>
                   </select>
                 </div>
               </div>
-              <div class="field">
-                <label for="mc-auth">Auth Type</label>
-                <select id="mc-auth">
-                  <option value="microsoft">Microsoft Account</option>
-                  <option value="easymc">EasyMC Token (20-char)</option>
-                  <option value="offline">Offline / Cracked</option>
+
+              <div class="form-row" id="mc-single-user-row">
+                <div class="field">
+                  <label for="mc-username">Bot Username / Linked MS Account</label>
+                  <div style="display:flex;gap:6px">
+                    <input type="text" id="mc-username" placeholder="Minecraft IGN, Email, or EasyMC Token">
+                    <select id="mc-linked-ms-picker" style="max-width:155px" title="Pick a linked Microsoft account">
+                      <option value="">Linked MS…</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="mc-auth">Auth Type</label>
+                  <select id="mc-auth">
+                    <option value="microsoft">Microsoft Account</option>
+                    <option value="easymc">EasyMC Token (20-char)</option>
+                    <option value="offline">Offline / Cracked</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field" id="mc-preset-select-row" style="display:none">
+                <label for="mc-acclist-preset">Selected Account Preset</label>
+                <select id="mc-acclist-preset">
+                  <option value="">No presets created yet</option>
                 </select>
               </div>
-            </div>
 
-            <div class="field" id="mc-preset-select-row" style="display:none">
-              <label for="mc-acclist-preset">Selected Account Preset</label>
-              <select id="mc-acclist-preset">
-                <option value="">No presets created yet</option>
-              </select>
-            </div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="mc-version">Minecraft Version</label>
+                  <select id="mc-version">
+                    <option value="">Auto-Detect</option>
+                    <option value="1.21.4">1.21.4</option>
+                    <option value="1.21.1">1.21.1</option>
+                    <option value="1.21">1.21</option>
+                    <option value="1.20.6">1.20.6</option>
+                    <option value="1.20.4" selected>1.20.4</option>
+                    <option value="1.20.2">1.20.2</option>
+                    <option value="1.20.1">1.20.1</option>
+                    <option value="1.19.4">1.19.4</option>
+                    <option value="1.18.2">1.18.2</option>
+                    <option value="1.16.5">1.16.5</option>
+                    <option value="1.12.2">1.12.2</option>
+                    <option value="1.8">1.8.x</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="mc-bot-max">Max Bots</label>
+                  <input type="number" id="mc-bot-max" value="1" min="1" max="50">
+                </div>
+                <div class="field">
+                  <label for="mc-joindelay">Join Delay (ms)</label>
+                  <input type="number" id="mc-joindelay" value="1000" min="0" step="250">
+                </div>
+              </div>
 
-            <div class="form-row">
-              <div class="field">
-                <label for="mc-version">Minecraft Version</label>
-                <select id="mc-version">
-                  <option value="">Auto-Detect</option>
-                  <option value="1.21.4">1.21.4</option>
-                  <option value="1.21.1">1.21.1</option>
-                  <option value="1.21">1.21</option>
-                  <option value="1.20.6">1.20.6</option>
-                  <option value="1.20.4" selected>1.20.4</option>
-                  <option value="1.20.2">1.20.2</option>
-                  <option value="1.20.1">1.20.1</option>
-                  <option value="1.19.4">1.19.4</option>
-                  <option value="1.18.2">1.18.2</option>
-                  <option value="1.16.5">1.16.5</option>
-                  <option value="1.12.2">1.12.2</option>
-                  <option value="1.8">1.8.x</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="mc-bot-max">Max Bots</label>
-                <input type="number" id="mc-bot-max" value="1" min="1" max="50">
-              </div>
-              <div class="field">
-                <label for="mc-joindelay">Join Delay (ms)</label>
-                <input type="number" id="mc-joindelay" value="1000" min="0" step="250">
-              </div>
-            </div>
-
-            <div class="form-row">
-              <div class="field">
-                <label for="mc-join-msg">Join Command / Message (Optional)</label>
-                <input type="text" id="mc-join-msg" placeholder="e.g. /login password">
-              </div>
-              <div class="field">
-                <label for="mc-spoof-mode">Client Brand Spoof</label>
-                <select id="mc-spoof-mode">
-                  <option value="off">Vanilla Default</option>
-                  <option value="modded">Fabric Modded</option>
-                  <option value="custom">Lunar / Custom</option>
-                </select>
+              <div class="form-row">
+                <div class="field">
+                  <label for="mc-join-msg">Join Command / Message (Optional)</label>
+                  <input type="text" id="mc-join-msg" placeholder="e.g. /login password">
+                </div>
+                <div class="field">
+                  <label for="mc-spoof-mode">Client Brand Spoof</label>
+                  <select id="mc-spoof-mode">
+                    <option value="off">Vanilla Default</option>
+                    <option value="modded">Fabric Modded</option>
+                    <option value="custom">Lunar / Custom</option>
+                  </select>
+                </div>
               </div>
             </div>
 
             <button class="btn btn-primary btn-block" id="btn-save-bot-config">💾 Save Connection Settings</button>
           </div>
 
-          <!-- Delivery Safety & Anti-AFK Card -->
-          <div class="card">
-            <h3>Delivery Safety &amp; Anti-AFK</h3>
-            <p class="muted">Protection parameters to ensure items and bots remain safe on DonutSMP.</p>
-
-            <div class="field">
-              <label for="mc-safe-cmd">Emergency Return Command</label>
-              <input type="text" id="mc-safe-cmd" value="/home" placeholder="/home">
-              <div class="hint">Executed if unauthorized players enter the safety radius or after delivering.</div>
-            </div>
-
-            <div class="form-row">
-              <div class="field">
-                <label for="mc-safety-radius">Safety Radius (Blocks)</label>
-                <input type="number" id="mc-safety-radius" value="5" min="1" max="30">
+          <!-- Delivery Safety Card -->
+          <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;height:100%">
+            <div>
+              <div class="card-header-flex">
+                <div>
+                  <h3>Delivery Safety</h3>
+                </div>
               </div>
+
               <div class="field">
-                <label for="mc-tpa-timeout">TPA Timeout (Seconds)</label>
-                <input type="number" id="mc-tpa-timeout" value="45" min="10" max="180">
+                <label for="mc-safe-cmd">Emergency Return Command</label>
+                <input type="text" id="mc-safe-cmd" value="/home" placeholder="/home">
+                <div class="hint">Auto-executes on threat or delivery</div>
               </div>
-            </div>
 
-            <div class="field" style="margin-top:10px">
-              <label class="checkbox-label">
-                <input type="checkbox" id="mc-antiafk-toggle" checked>
-                <span>Enable Anti-AFK (randomized jumping, arm swings and subtle rotations)</span>
-              </label>
-            </div>
-            <div class="field">
-              <label class="checkbox-label">
-                <input type="checkbox" id="mc-autoreconnect-toggle" checked>
-                <span>Auto-reconnect if server kicks or restarts</span>
-              </label>
-            </div>
+              <div class="form-row">
+                <div class="field">
+                  <label for="mc-safety-radius">Safety Radius (Blocks)</label>
+                  <input type="number" id="mc-safety-radius" value="5" min="1" max="30">
+                </div>
+                <div class="field">
+                  <label for="mc-tpa-timeout">TPA Timeout (Seconds)</label>
+                  <input type="number" id="mc-tpa-timeout" value="45" min="10" max="180">
+                </div>
+              </div>
 
-            <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
-            <div class="card-header-flex" style="margin-bottom:8px">
-              <h4 style="margin:0">Linked Microsoft Accounts (<span id="mc-linked-ms-count">0</span>)</h4>
-              <button type="button" class="btn btn-primary btn-sm" id="btn-link-ms-account-card">🔗 + Add Microsoft Account</button>
-            </div>
-            <div id="mc-linked-ms-list" class="linked-ms-list">
-              <div class="empty-cell" style="padding:12px">No Microsoft accounts linked yet. Click "+ Add Microsoft Account" to sign in via microsoft.com/link.</div>
+              <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;padding:16px;background:#0d1320;border:1px solid var(--border);border-radius:var(--radius-sm)">
+                <label class="apple-toggle">
+                  <input type="checkbox" id="mc-antiafk-toggle" checked>
+                  <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                  <span style="font-weight:500;color:#e2e8f0">Anti-AFK Movements</span>
+                </label>
+                <label class="apple-toggle">
+                  <input type="checkbox" id="mc-autoreconnect-toggle" checked>
+                  <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                  <span style="font-weight:500;color:#e2e8f0">Auto-Reconnect</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- TrafficerMC Account Presets Manager -->
+        <!-- Lower Card: Account Presets & Microsoft Identity -->
         <div class="card">
-          <div class="card-header-flex">
+          <div class="card-header-flex" style="margin-bottom:16px">
             <div>
-              <h3>TrafficerMC Account Presets Manager</h3>
-              <p class="muted" style="margin:0">Create reusable account groups (Microsoft, Cracked/Offline, or EasyMC Tokens) and launch multi-bot sessions</p>
+              <h3>Account Presets &amp; Microsoft Identity</h3>
             </div>
-            <button type="button" class="btn btn-primary btn-sm" id="btn-add-account-preset">+ New Account Preset</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-link-ms-account-card">🔗 + Add Microsoft Account</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-add-account-preset">+ New Account Preset</button>
+            </div>
           </div>
 
-          <div class="grid" style="grid-template-columns:260px 1fr;gap:16px;align-items:start">
-            <div class="preset-sidebar-box">
-              <div id="mc-preset-list" class="list">
-                <div class="empty-cell" style="padding:16px">No presets yet</div>
+          <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:20px;align-items:start">
+            <!-- Left Column: Account Presets -->
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="card-header-flex" style="margin-bottom:0">
+                <h4 style="margin:0;font-size:13.5px;color:#e2e8f0">Account Presets</h4>
+              </div>
+
+              <div class="grid" style="grid-template-columns:minmax(160px,200px) 1fr;gap:14px;align-items:start">
+                <div class="preset-sidebar-box">
+                  <div id="mc-preset-list" class="list">
+                    <div class="empty-cell" style="padding:16px">No presets yet</div>
+                  </div>
+                </div>
+
+                <div id="mc-preset-editor" style="display:none">
+                  <div class="form-row">
+                    <div class="field">
+                      <label for="mc-preset-name">Preset Name</label>
+                      <input type="text" id="mc-preset-name" placeholder="e.g. DonutSMP Delivery Alts">
+                    </div>
+                    <div class="field">
+                      <label for="mc-preset-auth">Preset Auth Type</label>
+                      <select id="mc-preset-auth">
+                        <option value="microsoft">Microsoft Accounts</option>
+                        <option value="offline">Offline / Cracked Usernames</option>
+                        <option value="easymc">EasyMC 20-Char Tokens</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <div class="card-header-flex" style="margin-bottom:6px">
+                      <label style="margin:0">Accounts in Preset (<span id="mc-preset-acc-count">0</span>)</label>
+                      <button type="button" class="btn btn-secondary btn-sm" id="btn-preset-add-ms">🔗 Link Microsoft Account to Preset</button>
+                    </div>
+                    <textarea id="mc-preset-accounts" rows="4" class="mono" placeholder="One username, Microsoft account ID, or EasyMC token per line…"></textarea>
+                  </div>
+
+                  <div class="toolbar" style="margin:0;gap:8px;display:flex;flex-wrap:wrap">
+                    <button type="button" class="btn btn-primary btn-sm" id="btn-save-preset">💾 Save Preset</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-use-preset-now">✓ Use This Preset for Bot</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="btn-delete-preset">🗑 Delete</button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div id="mc-preset-editor" style="display:none">
-              <div class="form-row">
-                <div class="field">
-                  <label for="mc-preset-name">Preset Name</label>
-                  <input type="text" id="mc-preset-name" placeholder="e.g. DonutSMP Delivery Alts">
-                </div>
-                <div class="field">
-                  <label for="mc-preset-auth">Preset Auth Type</label>
-                  <select id="mc-preset-auth">
-                    <option value="microsoft">Microsoft Accounts</option>
-                    <option value="offline">Offline / Cracked Usernames</option>
-                    <option value="easymc">EasyMC 20-Char Tokens</option>
-                  </select>
-                </div>
+            <!-- Right Column: Linked Microsoft Accounts -->
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div class="card-header-flex" style="margin-bottom:0">
+                <h4 style="margin:0;font-size:13.5px;color:#e2e8f0">Linked Microsoft Accounts (<span id="mc-linked-ms-count">0</span>)</h4>
               </div>
-
-              <div class="field">
-                <div class="card-header-flex" style="margin-bottom:6px">
-                  <label style="margin:0">Accounts in Preset (<span id="mc-preset-acc-count">0</span>)</label>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-preset-add-ms">🔗 Link Microsoft Account to Preset</button>
-                </div>
-                <textarea id="mc-preset-accounts" rows="4" class="mono" placeholder="One username, Microsoft account ID, or EasyMC token per line…"></textarea>
-              </div>
-
-              <div class="toolbar" style="margin:0;gap:8px;display:flex">
-                <button type="button" class="btn btn-primary btn-sm" id="btn-save-preset">💾 Save Preset</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-use-preset-now">✓ Use This Preset for Bot</button>
-                <button type="button" class="btn btn-danger btn-sm" id="btn-delete-preset">🗑 Delete</button>
+              <div id="mc-linked-ms-list" class="linked-ms-list" style="max-height:280px;overflow-y:auto">
+                <div class="empty-cell" style="padding:12px">No Microsoft accounts linked yet. Click "+ Add Microsoft Account" to sign in via microsoft.com/link.</div>
               </div>
             </div>
           </div>
@@ -490,7 +510,7 @@
           <div class="card-header-flex" style="flex-wrap:wrap">
             <div>
               <h3>TrafficerMC Live Inventory &amp; Container GUI Viewer</h3>
-              <p class="muted" style="margin:0" id="mc-inv-status-label">Click any slot to pick up/place • Shift+Click to quick-move • Right-Click to split • Click Hotbar to switch held item</p>
+              <span id="mc-inv-status-label" style="display:none"></span>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="btn btn-secondary btn-sm" id="btn-inv-open-ec">📦 Open /ec</button>
@@ -499,33 +519,71 @@
             </div>
           </div>
 
-          <div class="mc-viewer-layout">
-            <!-- Open Container / Chest / EnderChest Window (Shown automatically when bot opens any window) -->
-            <div id="mc-open-window-panel" class="mc-gui-panel" style="display:none">
-              <div class="card-header-flex" style="margin-bottom:8px">
-                <strong id="mc-open-window-title" style="color:#fbbf24">📦 Open Container</strong>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-close-open-window">✕ Close Container</button>
+          <!-- Sleek 2-Pane Card: Inventory Canvas + Slot Inspector Sidebar -->
+          <div class="pro-split-pane">
+            <!-- Left Pane: Container & Player Inventory Canvas -->
+            <div class="pro-slot-canvas">
+              <!-- Open Container / Chest / EnderChest Window (Shown automatically when bot opens any window) -->
+              <div id="mc-open-window-panel" class="mc-gui-panel" style="display:none">
+                <div class="card-header-flex" style="margin-bottom:8px">
+                  <strong id="mc-open-window-title" style="color:#fbbf24">📦 Open Container</strong>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-close-open-window">✕ Close Container</button>
+                </div>
+                <div id="mc-open-window-grid" class="mc-slot-grid"></div>
               </div>
-              <div id="mc-open-window-grid" class="mc-slot-grid"></div>
+
+              <!-- Main 27-Slot Player Inventory (3x9) -->
+              <div class="mc-gui-panel">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <strong style="color:#e2e8f0">🎒 Player Inventory (27 Slots)</strong>
+                  <span class="mono" id="mc-inv-bot-badge">No Bot Selected</span>
+                </div>
+                <div id="mc-inventory-grid" class="mc-slot-grid"></div>
+
+                <!-- Offhand + 9-Slot Hotbar Row -->
+                <div class="mc-hotbar-row">
+                  <div>
+                    <div class="muted" style="font-size:11px;margin-bottom:4px">🛡 Offhand</div>
+                    <div id="mc-offhand-slot" class="mc-slot" title="Offhand Slot (45)"></div>
+                  </div>
+                  <div style="flex:1">
+                    <div class="muted" style="font-size:11px;margin-bottom:4px">⚔️ Hotbar (Slots 1–9)</div>
+                    <div id="mc-hotbar-grid" class="mc-slot-grid mc-hotbar-grid"></div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <!-- Main 27-Slot Player Inventory (3x9) -->
-            <div class="mc-gui-panel">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <strong style="color:#e2e8f0">🎒 Player Inventory (27 Slots)</strong>
-                <span class="mono" id="mc-inv-bot-badge">No Bot Selected</span>
+            <!-- Right Pane: Slot Inspector Sidebar -->
+            <div class="pro-inspector-sidebar">
+              <div class="inspector-title">
+                <span>🔍 Slot Inspector</span>
+                <span class="badge blue">Live</span>
               </div>
-              <div id="mc-inventory-grid" class="mc-slot-grid"></div>
+              <div class="inspector-row">
+                <span class="inspector-label">Item Name:</span>
+                <span class="inspector-val" id="mc-inspector-name">Hover slot</span>
+              </div>
+              <div class="inspector-row">
+                <span class="inspector-label">Count / Stack:</span>
+                <span class="inspector-val" id="mc-inspector-count">—</span>
+              </div>
+              <div class="inspector-row">
+                <span class="inspector-label">Internal ID:</span>
+                <span class="inspector-val" id="mc-inspector-id">—</span>
+              </div>
+              <div class="inspector-row">
+                <span class="inspector-label">Slot Type:</span>
+                <span class="inspector-val" id="mc-inspector-type">—</span>
+              </div>
 
-              <!-- Offhand + 9-Slot Hotbar Row -->
-              <div class="mc-hotbar-row">
-                <div>
-                  <div class="muted" style="font-size:11px;margin-bottom:4px">🛡 Offhand</div>
-                  <div id="mc-offhand-slot" class="mc-slot" title="Offhand Slot (45)"></div>
-                </div>
-                <div style="flex:1">
-                  <div class="muted" style="font-size:11px;margin-bottom:4px">⚔️ Hotbar (Slots 1–9 — Click to equip, Shift+Click to move)</div>
-                  <div id="mc-hotbar-grid" class="mc-slot-grid mc-hotbar-grid"></div>
+              <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+                <div class="muted" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Quick Gestures</div>
+                <div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--secondary)">
+                  <div style="display:flex;justify-content:space-between"><span>Left-Click</span><strong style="color:#e2e8f0">Pick / Place</strong></div>
+                  <div style="display:flex;justify-content:space-between"><span>Right-Click</span><strong style="color:#e2e8f0">Split (1/2)</strong></div>
+                  <div style="display:flex;justify-content:space-between"><span>Shift + Click</span><strong style="color:#e2e8f0">Fast Transfer</strong></div>
+                  <div style="display:flex;justify-content:space-between"><span>Hotbar 1–9</span><strong style="color:#e2e8f0">Equip Slot</strong></div>
                 </div>
               </div>
             </div>
@@ -585,7 +643,7 @@
           </div>
 
           <!-- 2D Interactive Surroundings Radar Canvas -->
-          <div class="card">
+          <div class="card pro-radar-card">
             <div class="card-header-flex">
               <div>
                 <h3>Live 2D World Radar &amp; Safety Perimeter</h3>
@@ -593,7 +651,9 @@
               </div>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-radar-stop-path">⏹ Stop Walk</button>
             </div>
-            <div style="display:flex;justify-content:center;margin:8px 0">
+            <div class="radar-scope-wrapper">
+              <span class="radar-hud-tag top-left">RANGE: 32M</span>
+              <span class="radar-hud-tag top-right" style="border-color:rgba(239,68,68,0.45);color:#f87171">PERIMETER: 5M</span>
               <canvas id="mc-radar-canvas" width="320" height="260" style="background:#060a12;border:1px solid var(--border-strong);border-radius:10px;cursor:crosshair;max-width:100%"></canvas>
             </div>
             <div id="mc-nearby-players-list" class="list" style="max-height:130px;overflow-y:auto;margin-top:8px">
@@ -611,16 +671,32 @@
             <h3>Movement, Look &amp; Hand Controller</h3>
             <p class="muted">Real-time TrafficerMC physics movement &amp; orientation controls.</p>
 
-            <div class="dpad-grid" style="margin:12px auto">
-              <div></div>
-              <button type="button" class="btn btn-secondary dpad-btn" data-move="forward">⬆️ Forward (W)</button>
-              <div></div>
-              <button type="button" class="btn btn-secondary dpad-btn" data-move="left">⬅️ Left (A)</button>
-              <button type="button" class="btn btn-danger dpad-btn" id="btn-ctrl-reset-move">⏹ Stop</button>
-              <button type="button" class="btn btn-secondary dpad-btn" data-move="right">➡️ Right (D)</button>
-              <button type="button" class="btn btn-secondary dpad-btn" data-move="jump">🦘 Jump</button>
-              <button type="button" class="btn btn-secondary dpad-btn" data-move="back">⬇️ Back (S)</button>
-              <button type="button" class="btn btn-secondary dpad-btn" data-move="sneak">🧎 Sneak</button>
+            <div class="dpad-controller-housing" style="background:#090d16;border:1px solid var(--border-strong);border-radius:12px;padding:16px;max-width:320px;margin:12px auto;box-shadow:inset 0 2px 8px rgba(0,0,0,0.6)">
+              <div class="dpad-grid" style="margin:0 auto">
+                <div></div>
+                <button type="button" class="btn btn-secondary dpad-btn" data-move="forward" title="Forward (W)">
+                  <span>⬆️</span> <strong>W</strong>
+                </button>
+                <div></div>
+                <button type="button" class="btn btn-secondary dpad-btn" data-move="left" title="Left (A)">
+                  <span>⬅️</span> <strong>A</strong>
+                </button>
+                <button type="button" class="btn btn-danger dpad-btn" id="btn-ctrl-reset-move" title="Halt Movement">
+                  <span>⏹</span> <strong>STOP</strong>
+                </button>
+                <button type="button" class="btn btn-secondary dpad-btn" data-move="right" title="Right (D)">
+                  <span>➡️</span> <strong>D</strong>
+                </button>
+                <button type="button" class="btn btn-secondary dpad-btn" data-move="jump" title="Jump (Space)">
+                  <span>🦘</span> <strong>JUMP</strong>
+                </button>
+                <button type="button" class="btn btn-secondary dpad-btn" data-move="back" title="Back (S)">
+                  <span>⬇️</span> <strong>S</strong>
+                </button>
+                <button type="button" class="btn btn-secondary dpad-btn" data-move="sneak" title="Sneak (Shift)">
+                  <span>🧎</span> <strong>SNEAK</strong>
+                </button>
+              </div>
             </div>
 
             <div class="toolbar" style="justify-content:center;gap:6px;display:flex;flex-wrap:wrap;margin-bottom:12px">
@@ -683,18 +759,41 @@
               </div>
             </div>
 
-            <hr style="border:0;border-top:1px solid var(--border);margin:12px 0">
-            <div class="field" style="margin-bottom:8px">
-              <label class="checkbox-label">
+            <hr style="border:0;border-top:1px solid var(--border);margin:16px 0">
+            <!-- Apple Switch Main KillAura Toggle -->
+            <div style="background:#090d16;border:1px solid var(--border-strong);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <strong style="display:block;color:#fff;font-size:13.5px">Autonomous KillAura</strong>
+                <span class="muted" style="font-size:11.5px">Auto-attack hostile entities within striking perimeter</span>
+              </div>
+              <label class="apple-toggle apple-toggle-danger" style="margin:0" title="Toggle KillAura">
                 <input type="checkbox" id="mc-ctrl-killaura-toggle">
-                <span><strong>Enable KillAura</strong> (Auto-attack entities in range)</span>
+                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
               </label>
             </div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">
-              <label class="checkbox-label"><input type="checkbox" id="mc-ka-player" checked><span>Players</span></label>
-              <label class="checkbox-label"><input type="checkbox" id="mc-ka-mob" checked><span>Hostile Mobs</span></label>
-              <label class="checkbox-label"><input type="checkbox" id="mc-ka-animal"><span>Animals</span></label>
-              <label class="checkbox-label"><input type="checkbox" id="mc-ka-rotate" checked><span>Rotate</span></label>
+
+            <!-- Apple Switch Sub-Toggles Grid -->
+            <div class="apple-subtoggles-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px">
+              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
+                <span style="font-size:12.5px;font-weight:500">Players</span>
+                <input type="checkbox" id="mc-ka-player" checked>
+                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+              </label>
+              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
+                <span style="font-size:12.5px;font-weight:500">Hostile Mobs</span>
+                <input type="checkbox" id="mc-ka-mob" checked>
+                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+              </label>
+              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
+                <span style="font-size:12.5px;font-weight:500">Animals</span>
+                <input type="checkbox" id="mc-ka-animal">
+                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+              </label>
+              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
+                <span style="font-size:12.5px;font-weight:500">Auto-Rotate</span>
+                <input type="checkbox" id="mc-ka-rotate" checked>
+                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+              </label>
             </div>
             <div class="form-row">
               <div class="field" style="margin:0">
@@ -730,45 +829,56 @@
       </div>
 
       <!-- Live Terminal Console & In-Game Command Dispatcher -->
-      <div class="section card" style="margin-top:16px">
-        <div class="card-header-flex">
-          <div>
-            <h3>Live Minecraft Bot Console &amp; Chat</h3>
-            <span class="muted" style="margin:0">Real-time SSE events, chat messages, and Microsoft login codes from Mineflayer session</span>
+      <div class="section card pro-console-card" style="margin-top:16px;padding:0">
+        <div class="pro-console-header">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div class="pro-traffic-dots">
+              <span class="dot-red"></span>
+              <span class="dot-yellow"></span>
+              <span class="dot-green"></span>
+            </div>
+            <div>
+              <h3 style="margin:0;font-size:14px;font-weight:600">Live Minecraft Bot Console &amp; Chat</h3>
+            </div>
           </div>
-          <button class="btn btn-secondary btn-sm" id="btn-clear-bot-logs">Clear Console</button>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="filter-tabs" id="console-filter-tabs" style="margin:0">
+              <button type="button" class="filter-btn active" data-console-filter="all">All</button>
+              <button type="button" class="filter-btn" data-console-filter="chat">Chat</button>
+              <button type="button" class="filter-btn" data-console-filter="info">Events</button>
+              <button type="button" class="filter-btn" data-console-filter="error">Errors</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btn-clear-bot-logs">Clear</button>
+          </div>
         </div>
 
-        <div class="terminal-box" id="bot-live-terminal">
+        <div class="terminal-box pro-terminal" id="bot-live-terminal">
           <div class="terminal-line text-muted">[Console] Connected to live event stream. Waiting for bot activity...</div>
         </div>
 
-        <form id="bot-chat-form" class="chat-sender-form">
+        <form id="bot-chat-form" class="chat-sender-form pro-chat-form" style="margin:0">
+          <span class="prefix-symbol">&gt;</span>
           <input type="text" id="bot-chat-input" placeholder="Type in-game chat or command (e.g. /home, /tpa, /ec, /pay, /balance)…" autocomplete="off">
-          <button type="submit" class="btn btn-primary" id="btn-send-chat">Send to Minecraft</button>
+          <span class="shortcut-badge"><kbd style="font-family:inherit">↵</kbd> Return</span>
+          <button type="submit" class="btn btn-primary btn-sm" id="btn-send-chat">Send</button>
         </form>
       </div>
     </section>
 
     <!-- 4. DISCORD BOT VIEW -->
     <section class="view" id="view-discord">
-      <div class="section-head">
-        <div>
-          <h2>Bluxbot Discord Server Management</h2>
-          <p class="muted" style="margin:2px 0 0">Role hierarchies, channel mappings, ticket panels and instant synchronization</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="subnav-tabs" style="margin-bottom:0">
+          <button class="subnav-btn active" data-sub="sub-servers">Guilds &amp; Channels</button>
+          <button class="subnav-btn" data-sub="sub-template">Roles &amp; Categories</button>
+          <button class="subnav-btn" data-sub="sub-tickets">Tickets &amp; Panels</button>
+          <button class="subnav-btn" data-sub="sub-credentials">Bot Token Config</button>
         </div>
         <div class="toolbar" style="margin:0">
           <button class="btn btn-primary" id="btn-discord-sync-now">
             <span>⚡</span> Sync Server Live
           </button>
         </div>
-      </div>
-
-      <div class="subnav-tabs">
-        <button class="subnav-btn active" data-sub="sub-servers">Guilds &amp; Channels</button>
-        <button class="subnav-btn" data-sub="sub-template">Roles &amp; Categories</button>
-        <button class="subnav-btn" data-sub="sub-tickets">Tickets &amp; Panels</button>
-        <button class="subnav-btn" data-sub="sub-credentials">Bot Token Config</button>
       </div>
 
       <!-- Subview 1: Guilds & Mappings -->
@@ -921,13 +1031,6 @@
 
     <!-- 5. SECURITY & SETTINGS VIEW -->
     <section class="view" id="view-settings">
-      <div class="section-head">
-        <div>
-          <h2>Security &amp; Console Configuration</h2>
-          <p class="muted" style="margin:2px 0 0">Session authentication, password management, and security controls</p>
-        </div>
-      </div>
-
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))">
         <!-- Change Password Card -->
         <div class="card">
@@ -972,7 +1075,6 @@
           <div class="check-item"><span class="check-icon">✓</span><div><strong>CSRF Defense:</strong> Cryptographic token validation required on all state-modifying requests.</div></div>
           <div class="check-item"><span class="check-icon">✓</span><div><strong>Rate Limiting:</strong> In-memory login throttling (max 8 attempts per IP/username per 10-minute window).</div></div>
           <div class="check-item"><span class="check-icon">✓</span><div><strong>Content Security Policy:</strong> Directives restrict script sources to self and block frame-ancestors to prevent clickjacking.</div></div>
-          <div class="check-item"><span class="check-icon">✓</span><div><strong>No Raw Desktop Leaks:</strong> Native responsive web architecture served strictly over HTTP.</div></div>
         </div>
       </div>
     </section>
@@ -1021,5 +1123,51 @@
 
 <div id="toast"></div>
 <script src="/app.js"></script>
+<script>
+// Live Console Filter Tabs interactivity
+document.querySelectorAll('#console-filter-tabs .filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#console-filter-tabs .filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.getAttribute('data-console-filter');
+    const lines = document.querySelectorAll('#bot-live-terminal .terminal-line');
+    lines.forEach(line => {
+      if (filter === 'all') {
+        line.style.display = '';
+      } else if (filter === 'chat' && line.classList.contains('terminal-chat')) {
+        line.style.display = '';
+      } else if (filter === 'info' && (line.classList.contains('terminal-info') || line.classList.contains('terminal-success'))) {
+        line.style.display = '';
+      } else if (filter === 'error' && (line.classList.contains('terminal-error') || line.classList.contains('terminal-warn'))) {
+        line.style.display = '';
+      } else {
+        line.style.display = 'none';
+      }
+    });
+  });
+});
+
+// Slot Inspector Hover interactivity
+document.addEventListener('mouseover', (e) => {
+  const slot = e.target.closest('.mc-slot');
+  if (slot) {
+    const img = slot.querySelector('img');
+    const countEl = slot.querySelector('.item-count');
+    const fallback = slot.querySelector('.item-fallback');
+    const nameEl = document.getElementById('mc-inspector-name');
+    const countVal = document.getElementById('mc-inspector-count');
+    const idVal = document.getElementById('mc-inspector-id');
+    const typeVal = document.getElementById('mc-inspector-type');
+    if (img || fallback) {
+      const itemName = img ? (img.alt || 'Item') : (fallback ? fallback.textContent : 'Item');
+      const count = countEl ? countEl.textContent : '1';
+      if (nameEl) nameEl.textContent = itemName;
+      if (countVal) countVal.textContent = count;
+      if (idVal) idVal.textContent = img ? img.src.split('/').pop().replace('.png','') : 'custom';
+      if (typeVal) typeVal.textContent = slot.closest('#mc-hotbar-grid') ? 'Hotbar Slot' : (slot.closest('#mc-open-window-grid') ? 'Container Window' : 'Main Inventory');
+    }
+  }
+});
+</script>
 </body>
 </html>

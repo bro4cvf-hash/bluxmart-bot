@@ -3,30 +3,54 @@
    ============================================================================= */
 
 :root {
-  --bg: #090d16;
-  --card: #111827;
-  --card-hover: #162032;
-  --card-elevated: #1a243b;
-  --text: #f3f4f6;
-  --text-muted: #94a3b8;
-  --secondary: #94a3b8;
-  --tertiary: #64748b;
-  --border: #1e293b;
-  --border-strong: #334155;
-  --accent: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-soft: rgba(99, 102, 241, 0.15);
-  --success: #10b981;
-  --success-soft: rgba(16, 185, 129, 0.15);
-  --warning: #f59e0b;
-  --warning-soft: rgba(245, 158, 11, 0.15);
-  --danger: #ef4444;
-  --danger-soft: rgba(239, 68, 68, 0.15);
+  /* Apple Obsidian Dark Design Tokens */
+  --bg-canvas: #08090a;
+  --bg-sidebar: rgba(14, 15, 17, 0.72);
+  --bg-card: rgba(22, 23, 27, 0.65);
+  --bg-card-hover: rgba(28, 30, 36, 0.78);
+  --bg-card-elevated: rgba(32, 34, 40, 0.85);
+
+  --text-primary: #f5f5f7;
+  --text-secondary: #86868b;
+  --text-tertiary: #636366;
+
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-glass-hover: rgba(255, 255, 255, 0.14);
+
+  --accent-apple: #0a84ff;
+  --success-apple: #30d158;
+  --warning-apple: #ffd60a;
+  --danger-apple: #ff453a;
+
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Backwards Compatibility Mappings */
+  --bg: var(--bg-canvas);
+  --card: var(--bg-card);
+  --card-hover: var(--bg-card-hover);
+  --card-elevated: var(--bg-card-elevated);
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --secondary: var(--text-secondary);
+  --tertiary: var(--text-tertiary);
+  --border: var(--border-glass);
+  --border-strong: var(--border-glass-hover);
+  --accent: var(--accent-apple);
+  --accent-hover: #0071e3;
+  --accent-soft: rgba(10, 132, 255, 0.15);
+  --success: var(--success-apple);
+  --success-soft: rgba(48, 209, 88, 0.15);
+  --warning: var(--warning-apple);
+  --warning-soft: rgba(255, 214, 10, 0.15);
+  --danger: var(--danger-apple);
+  --danger-soft: rgba(255, 69, 58, 0.15);
   --radius-lg: 16px;
   --radius-md: 12px;
   --radius-sm: 8px;
   --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
   --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 8px 32px 0 rgba(0, 0, 0, 0.36);
   --sidebar-w: 260px;
 }
 
@@ -39,21 +63,38 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
   font-size: 14px;
   line-height: 1.5;
+  letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 /* ---------- Typography & Utility ---------- */
 h1, h2, h3, h4 {
   margin: 0 0 6px;
-  color: #fff;
+  color: var(--text-primary);
   font-weight: 600;
-  letter-spacing: -0.01em;
+}
+
+h1 {
+  letter-spacing: -0.024em;
+}
+
+h2 {
+  letter-spacing: -0.020em;
+}
+
+h3 {
+  letter-spacing: -0.015em;
+}
+
+h4 {
+  letter-spacing: -0.010em;
 }
 
 p { margin: 0 0 10px; }
@@ -77,6 +118,16 @@ p { margin: 0 0 10px; }
   margin: 4px 0 2px;
 }
 
+/* ---------- Apple Glass Surfaces Utility ---------- */
+.apple-glass {
+  background: var(--bg-card);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), var(--shadow-card);
+  border-radius: var(--radius-lg);
+}
+
 /* ---------- App Layout ---------- */
 .app {
   display: flex;
@@ -88,8 +139,10 @@ p { margin: 0 0 10px; }
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
-  background: var(--card);
-  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar, rgba(14, 15, 17, 0.72));
+  backdrop-filter: blur(30px) saturate(190%);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  border-right: 1px solid var(--border-glass);
   padding: 20px 14px;
   display: flex;
   flex-direction: column;
@@ -107,7 +160,7 @@ p { margin: 0 0 10px; }
   align-items: center;
   gap: 12px;
   padding: 6px 10px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-glass);
   margin-bottom: 8px;
 }
 
@@ -177,16 +230,19 @@ p { margin: 0 0 10px; }
 }
 
 .nav-btn:hover {
-  background: var(--card-hover);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
-  border-color: var(--border);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .nav-btn.active {
-  background: var(--accent-soft);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
-  border-color: rgba(99, 102, 241, 0.3);
+  border: 1px solid var(--border-glass);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.2);
   font-weight: 600;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .nav-pill {
@@ -205,13 +261,13 @@ p { margin: 0 0 10px; }
   background: var(--tertiary);
 }
 
-.nav-status-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.nav-status-dot.on { background: var(--success-apple); box-shadow: 0 0 8px var(--success-apple); }
 .nav-status-dot.off { background: var(--danger); }
 
 .sidebar-foot {
   margin-top: auto;
   padding-top: 14px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-glass);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -259,11 +315,18 @@ p { margin: 0 0 10px; }
 
 .topbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
   flex-wrap: wrap;
+  padding: 16px 22px;
+  background: var(--bg-card);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), var(--shadow-sm);
 }
 
 .topbar h1 {
@@ -286,13 +349,17 @@ p { margin: 0 0 10px; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid var(--border-glass);
   border-radius: 999px;
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 500;
   color: #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
 }
 
 .dot {
@@ -301,11 +368,12 @@ p { margin: 0 0 10px; }
   border-radius: 50%;
   background: var(--tertiary);
   flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
 .dot.on {
-  background: var(--success);
-  box-shadow: 0 0 8px var(--success);
+  background: var(--success-apple);
+  box-shadow: 0 0 8px var(--success-apple);
 }
 
 .dot.off {
@@ -326,17 +394,20 @@ p { margin: 0 0 10px; }
 }
 
 .card {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: var(--bg-card);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), var(--shadow-card);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
   padding: 20px;
   min-width: 0;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
-  border-color: var(--border-strong);
+  border-color: var(--border-glass-hover, rgba(255, 255, 255, 0.16));
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), var(--shadow-card);
 }
 
 .stat-card {
@@ -405,8 +476,8 @@ p { margin: 0 0 10px; }
   border: 1px solid transparent;
   font: inherit;
   font-weight: 500;
-  font-size: 13.5px;
-  border-radius: var(--radius-sm);
+  font-size: 13px;
+  border-radius: 8px;
   padding: 8px 16px;
   cursor: pointer;
   display: inline-flex;
@@ -414,22 +485,81 @@ p { margin: 0 0 10px; }
   justify-content: center;
   gap: 8px;
   min-height: 38px;
-  transition: all 0.15s ease;
+  transition: all 0.15s var(--ease-spring);
   white-space: nowrap;
+  user-select: none;
 }
 
-.btn:active { transform: translateY(1px); }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 12px rgba(99, 102, 241, 0.4); }
-.btn-secondary { background: #1e293b; color: #e2e8f0; border-color: var(--border-strong); }
-.btn-secondary:hover { background: #283548; color: #fff; }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #dc2626; }
+.btn:active {
+  transform: scale(0.975);
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #0a84ff 0%, #0071e3 100%);
+  color: #fff;
+  border: 1px solid rgba(10, 132, 255, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(180deg, #1a8cff 0%, #0077ed 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 14px rgba(10, 132, 255, 0.45);
+}
+
+/* Start buttons: Apple Emerald gradient with subtle green glow */
+#btn-bot-start,
+#btn-quick-start-bot {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 14px rgba(16, 185, 129, 0.35);
+}
+
+#btn-bot-start:hover,
+#btn-quick-start-bot:hover {
+  background: linear-gradient(180deg, #1abf86 0%, #05a070 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 20px rgba(16, 185, 129, 0.55);
+}
+
+/* Destructive / Stop buttons: Subtle red tint */
+#btn-bot-stop,
+#btn-quick-stop-bot,
+.btn-danger {
+  background: rgba(255, 69, 58, 0.14);
+  color: #ff453a;
+  border: 1px solid rgba(255, 69, 58, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+#btn-bot-stop:hover,
+#btn-quick-stop-bot:hover,
+.btn-danger:hover {
+  background: rgba(255, 69, 58, 0.24);
+  border-color: rgba(255, 69, 58, 0.48);
+  color: #ff6961;
+  box-shadow: 0 0 14px rgba(255, 69, 58, 0.25);
+}
+
+/* Secondary button: Translucent glass */
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.07);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 .btn-ghost { background: transparent; color: var(--accent); }
 .btn-ghost:hover { background: var(--accent-soft); }
-.btn-sm { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+.btn-sm { min-height: 30px; padding: 4px 10px; font-size: 12px; border-radius: 6px; }
 .btn-block { width: 100%; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 
 /* ---------- Tables ---------- */
 .table-scroll {
@@ -514,32 +644,231 @@ tr:last-child td { border-bottom: 0; }
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
 }
 
-input[type="text"], input[type="password"], input[type="number"], select, textarea {
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input[type="search"],
+select,
+textarea {
   width: 100%;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   color: #fff;
-  background: #0d1320;
+  background: rgba(13, 19, 32, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   padding: 9px 12px;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring), background 0.15s ease;
 }
 
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px !important;
+  cursor: pointer;
 }
 
+select option {
+  background: #0d1320;
+  color: #f3f4f6;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #0a84ff;
+  box-shadow: 0 0 0 3.5px rgba(10, 132, 255, 0.35);
+}
+
+/* Hide native number spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ---------- Checkboxes (Modern Dark Slate) ---------- */
 .checkbox-label {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
   color: #cbd5e1;
+  user-select: none;
+  transition: color 0.15s ease;
 }
+
+.checkbox-label:hover {
+  color: #f1f5f9;
+}
+
+.checkbox-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  cursor: pointer;
+  background: #0d1320;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  display: grid;
+  place-content: center;
+  flex-shrink: 0;
+  position: relative;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.checkbox-label input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+
+.checkbox-label input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+}
+
+.checkbox-label input[type="checkbox"]::after {
+  content: "";
+  width: 4.5px;
+  height: 8.5px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  margin-top: -1.5px;
+}
+
+.checkbox-label input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.35);
+}
+
+.checkbox-label input[type="checkbox"]:checked::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Apple iOS/macOS Spring Toggle Switch ---------- */
+.apple-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.apple-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  margin: 0;
+}
+
+.apple-toggle-track {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  position: relative;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.25s ease;
+}
+
+.apple-toggle-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  flex-shrink: 0;
+  display: block;
+}
+
+/* Fallback if thumb element is omitted and track is empty */
+.apple-toggle-track:empty::after {
+  content: "";
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: block;
+}
+
+/* Checked State - Apple Green (#34c759) */
+.apple-toggle input[type="checkbox"]:checked + .apple-toggle-track,
+.apple-toggle input[type="checkbox"]:checked ~ .apple-toggle-track,
+.apple-toggle:has(input[type="checkbox"]:checked) .apple-toggle-track {
+  background: #34c759;
+  border-color: rgba(52, 199, 89, 0.4);
+}
+
+/* Thumb Translation (18px) */
+.apple-toggle input[type="checkbox"]:checked + .apple-toggle-track .apple-toggle-thumb,
+.apple-toggle input[type="checkbox"]:checked ~ .apple-toggle-track .apple-toggle-thumb,
+.apple-toggle input[type="checkbox"]:checked ~ .apple-toggle-thumb,
+.apple-toggle:has(input[type="checkbox"]:checked) .apple-toggle-thumb,
+.apple-toggle input[type="checkbox"]:checked + .apple-toggle-track:empty::after,
+.apple-toggle input[type="checkbox"]:checked ~ .apple-toggle-track:empty::after {
+  transform: translateX(18px);
+}
+
+/* KillAura Checked State - Apple Red (#ff453a) */
+#mc-ctrl-killaura-toggle:checked + .apple-toggle-track,
+#mc-ctrl-killaura-toggle:checked ~ .apple-toggle-track,
+.apple-toggle:has(#mc-ctrl-killaura-toggle:checked) .apple-toggle-track,
+.apple-toggle-danger input[type="checkbox"]:checked + .apple-toggle-track,
+.apple-toggle-danger input[type="checkbox"]:checked ~ .apple-toggle-track {
+  background: #ff453a;
+  border-color: rgba(255, 69, 58, 0.4);
+}
+
+/* Focus and accessibility */
+.apple-toggle input[type="checkbox"]:focus-visible + .apple-toggle-track,
+.apple-toggle input[type="checkbox"]:focus-visible ~ .apple-toggle-track {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+}
+
+/* Disabled State */
+.apple-toggle input[type="checkbox"]:disabled + .apple-toggle-track,
+.apple-toggle input[type="checkbox"]:disabled ~ .apple-toggle-track,
+.apple-toggle:has(input[type="checkbox"]:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 
 /* ---------- Filters & Search ---------- */
 .filter-bar {
@@ -557,57 +886,102 @@ input:focus, select:focus, textarea:focus {
 }
 
 .filter-tabs {
-  display: flex;
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 3px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
   flex-wrap: wrap;
 }
 
 .filter-btn {
-  background: #1e293b;
-  border: 1px solid var(--border);
-  color: var(--secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 7px 14px;
+  color: #94a3b8;
   font: inherit;
   font-size: 12.5px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.filter-btn:hover { color: #fff; }
-.filter-btn.active {
-  background: var(--accent-soft);
-  border-color: rgba(99, 102, 241, 0.4);
-  color: #fff;
-  font-weight: 600;
-}
-
-/* ---------- Subnav Tabs ---------- */
-.subnav-tabs {
-  display: flex;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
-  overflow-x: auto;
-}
-
-.subnav-btn {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--secondary);
-  font: inherit;
-  font-size: 13.5px;
   font-weight: 500;
-  padding: 10px 14px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
 }
 
-.subnav-btn:hover { color: #fff; }
-.subnav-btn.active {
+.filter-btn:hover {
   color: #fff;
-  border-bottom-color: var(--accent);
+}
+
+.filter-btn.active {
+  background: #1e293b;
+  color: #fff;
   font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ---------- Apple Segmented Controls & Subnav Pills ---------- */
+.subnav-tabs,
+.apple-segmented-bar,
+.pro-segmented-nav {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 3px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  margin-bottom: 20px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.subnav-btn,
+.mc-subnav-btn,
+.apple-segment-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 7px 14px;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.subnav-btn:hover,
+.mc-subnav-btn:hover,
+.apple-segment-btn:hover {
+  color: #fff;
+}
+
+.subnav-btn.active,
+.mc-subnav-btn.active,
+.apple-segment-btn.active {
+  background: #1e293b;
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .subview { display: none; }
@@ -759,7 +1133,7 @@ input:focus, select:focus, textarea:focus {
     height: auto;
     position: static;
     border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-glass);
     padding: 12px 14px;
   }
   .sidebar nav {
@@ -787,11 +1161,13 @@ input:focus, select:focus, textarea:focus {
 .login-card {
   width: 100%;
   max-width: 400px;
-  background: var(--card);
-  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
   padding: 32px;
-  box-shadow: var(--shadow);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), var(--shadow-card);
   text-align: left;
 }
 
@@ -836,24 +1212,6 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* ---------- TrafficerMC Sub-Navigation, Inventory Viewer, Radar & Controller ---------- */
-.mc-subnav-btn {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--secondary);
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  padding: 10px 14px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.mc-subnav-btn:hover { color: #fff; }
-.mc-subnav-btn.active {
-  color: #fff;
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
 .mc-subview { display: none; }
 .mc-subview.active { display: block; animation: fade 0.15s ease; }
 
@@ -980,7 +1338,10 @@ input:focus, select:focus, textarea:focus {
 }
 .item-tooltip {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: 9999;
+  will-change: transform;
   background: rgba(12, 6, 24, 0.96);
   border: 2px solid #582c83;
   border-radius: 6px;
@@ -1049,5 +1410,451 @@ input:focus, select:focus, textarea:focus {
   border-color: #818cf8;
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
 }
+
+/* =============================================================================
+   Xcode-Style Pro Toolbar & CSS for Console / Radar / Split-Pane Inventory
+   ============================================================================= */
+
+/* ---------- 1. Xcode-Style Pro Toolbar ---------- */
+.pro-toolbar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 10;
+}
+
+.pro-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: linear-gradient(180deg, #161e31 0%, #111827 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.pro-scheme-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10, 15, 26, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 3px 10px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pro-scheme-picker:focus-within,
+.pro-scheme-picker:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 8px rgba(99, 102, 241, 0.2);
+}
+
+.pro-select {
+  background: transparent;
+  color: #f3f4f6;
+  border: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 24px 4px 6px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+}
+.pro-select option {
+  background: #111827;
+  color: #f3f4f6;
+}
+
+.pro-control-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(10, 15, 26, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.pro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  color: #e2e8f0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+.pro-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.pro-btn:active {
+  transform: translateY(1px);
+  background: rgba(255, 255, 255, 0.04);
+}
+.pro-btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+.pro-btn-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  border-color: #818cf8;
+}
+.pro-btn-primary:hover {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  border-color: #a5b4fc;
+}
+.pro-btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.pro-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fff;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.pro-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ---------- 2. macOS Traffic Light Window Dots ---------- */
+.pro-traffic-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px;
+  user-select: none;
+}
+.pro-traffic-dots .dot-red,
+.pro-traffic-dots span:nth-child(1) {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ff5f56;
+  border: 0.5px solid #e0443e;
+  box-shadow: 0 0 6px rgba(255, 95, 86, 0.4);
+  display: inline-block;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.pro-traffic-dots .dot-yellow,
+.pro-traffic-dots span:nth-child(2) {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ffbd2e;
+  border: 0.5px solid #dea123;
+  box-shadow: 0 0 6px rgba(255, 189, 46, 0.4);
+  display: inline-block;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.pro-traffic-dots .dot-green,
+.pro-traffic-dots span:nth-child(3) {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #27c93f;
+  border: 0.5px solid #1aab29;
+  box-shadow: 0 0 6px rgba(39, 201, 63, 0.4);
+  display: inline-block;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.pro-traffic-dots:hover .dot-red,
+.pro-traffic-dots:hover span:nth-child(1),
+.pro-traffic-dots:hover .dot-yellow,
+.pro-traffic-dots:hover span:nth-child(2),
+.pro-traffic-dots:hover .dot-green,
+.pro-traffic-dots:hover span:nth-child(3) {
+  transform: scale(1.08);
+}
+
+/* ---------- 3. Xcode Pro Console Card & Terminal & Chat Form ---------- */
+.pro-console-card {
+  background: #0b0f19;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.pro-console-card .card-head,
+.pro-console-card .pro-console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #131b2c 0%, #0d1424 100%);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.pro-terminal {
+  background: #060911;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  padding: 14px 16px;
+  height: 280px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #060911;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.pro-terminal::-webkit-scrollbar {
+  width: 6px;
+}
+.pro-terminal::-webkit-scrollbar-track {
+  background: #060911;
+}
+.pro-terminal::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+.pro-terminal::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.pro-terminal .log-line {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 3px;
+  word-break: break-word;
+}
+.pro-terminal .log-time {
+  color: var(--tertiary);
+  user-select: none;
+  flex-shrink: 0;
+}
+.pro-terminal .log-info { color: #94a3b8; }
+.pro-terminal .log-success { color: #34d399; }
+.pro-terminal .log-warn { color: #fbbf24; }
+.pro-terminal .log-err { color: #f87171; }
+.pro-terminal .log-chat { color: #60a5fa; }
+
+.pro-chat-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #0d1320;
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+.pro-chat-form .prefix-symbol,
+.pro-chat-form .chat-prefix {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+  user-select: none;
+  flex-shrink: 0;
+}
+.pro-chat-form input[type="text"] {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pro-chat-form input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.pro-chat-form .shortcut-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ---------- 4. Apple Instruments HUD Radar Card ---------- */
+.pro-radar-card {
+  background: #0b0f19;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.radar-scope-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #091224 0%, #04070e 100%);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  padding: 12px;
+  margin: 10px 0;
+  overflow: hidden;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8), 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+.radar-scope-wrapper::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle, rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+}
+.radar-scope-wrapper canvas {
+  position: relative;
+  z-index: 2;
+  border-radius: 8px;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.6);
+}
+
+.radar-hud-tag {
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(11, 16, 28, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 8px rgba(56, 189, 248, 0.2);
+  pointer-events: none;
+  user-select: none;
+}
+.radar-hud-tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
+}
+.radar-hud-tag.top-left { top: 18px; left: 18px; }
+.radar-hud-tag.top-right { top: 18px; right: 18px; }
+.radar-hud-tag.bottom-left { bottom: 18px; left: 18px; }
+.radar-hud-tag.bottom-right { bottom: 18px; right: 18px; }
+
+/* ---------- 5. 2-Pane Split Layout (Inventory & Inspector) ---------- */
+.pro-split-pane {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  align-items: start;
+  width: 100%;
+}
+@media (max-width: 1080px) {
+  .pro-split-pane {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pro-slot-canvas {
+  background: #090d16;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+  min-width: 0;
+}
+
+.pro-inspector-sidebar {
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.pro-inspector-sidebar .inspector-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--secondary);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pro-inspector-sidebar .inspector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.pro-inspector-sidebar .inspector-label {
+  color: var(--tertiary);
+  font-weight: 500;
+}
+.pro-inspector-sidebar .inspector-val {
+  color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+}
+
 
 
