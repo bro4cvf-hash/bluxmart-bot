@@ -856,11 +856,21 @@ $('btn-save-bot-config')?.addEventListener('click', async () => {
 // Bot Action Buttons (Start, Stop, Reconnect)
 async function dispatchBotAction(action) {
   try {
+    const target = $('mc-active-bot-select')?.value || '*';
     await api('/api/bot/action', {
       method: 'POST',
-      body: JSON.stringify({ action })
+      body: JSON.stringify({ action, target })
     });
-    toast(`Bot command '${action}' sent`);
+    if (action === 'stop') {
+      toast(target === '*' ? 'Stopped and disconnected all bots' : `Stopped bot ${target}`);
+      appendTerminalLine($('bot-live-terminal'), `[Bot] Stop requested for ${target === '*' ? 'all bots' : target}`, 'error');
+    } else if (action === 'start') {
+      toast('Starting bot connection…');
+      appendTerminalLine($('bot-live-terminal'), '[Bot] Starting connection…', 'info');
+    } else {
+      toast(`Bot command '${action}' sent`);
+    }
+    setTimeout(loadStatus, 400);
     setTimeout(loadStatus, 1500);
   } catch (err) {
     toast(`Bot action failed: ${err.message}`);

@@ -202,6 +202,8 @@ function safeStringify(value) {
 let clientVersion = 3.1
 let playerList = []
 const activeBots = new Map()
+const allBotInstances = new Set()
+const pendingReconnectTimeouts = new Set()
 
 function inventorySnapshot(bot) {
   const serializeItem = (item) => {
@@ -433,14 +435,14 @@ ipcMain.on('btnClick', (event, btn) => {
       connectBot()
       break
     case 'btnStop':
-      stopBot = true
-      notify('Info', 'Stopped sending bots.', 'success')
+      stopAllBots()
+      notify('Info', 'Stopped and disconnected all bots.', 'success')
       break
     case 'btnChat':
       exeAll('chat ' + storeinfo().value.chatMsg)
       break
     case 'btnDisconnect':
-      exeAll('disconnect')
+      stopAllBots()
       break
     case 'btnSetHotbar':
       exeAll('sethotbar ' + storeinfo().value.hotbarSlot)
@@ -576,8 +578,90 @@ async function startScript(username) {
   }
 }
 
+function disconnectBotInstance(bot, reason = 'Stopped by user') {
+  if (!bot) return
+  try {
+    bot._manualDisconnect = true
+    if (bot._client) {
+      bot._client._manualDisconnect = true
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof bot.quit === 'function') {
+      bot.quit(reason)
+    }
+  } catch (_) {}
+
+  try {
+    if (bot._client && typeof bot._client.end === 'function') {
+      bot._client.end(reason)
+    }
+  } catch (_) {}
+
+  try {
+    if (bot._client?.socket && typeof bot._client.socket.destroy === 'function') {
+      bot._client.socket.destroy()
+    }
+  } catch (_) {}
+
+  const uname = bot._client?.username || bot.username
+  if (uname) {
+    if (activeBots.get(uname) === bot) {
+      activeBots.delete(uname)
+    }
+    sendEvent(uname, 'end', reason)
+  }
+}
+
+function stopAllBots(target = null) {
+  stopBot = true
+
+  for (const timer of pendingReconnectTimeouts) {
+    try {
+      clearTimeout(timer)
+    } catch (_) {}
+  }
+  pendingReconnectTimeouts.clear()
+
+  if (target && target !== '*') {
+    let found = false
+    for (const bot of allBotInstances) {
+      const uname = bot._client?.username || bot.username
+      if (uname === target) {
+        disconnectBotInstance(bot, 'Stopped by user')
+        allBotInstances.delete(bot)
+        found = true
+      }
+    }
+    if (activeBots.has(target)) {
+      disconnectBotInstance(activeBots.get(target), 'Stopped by user')
+      activeBots.delete(target)
+      found = true
+    }
+    playerList = playerList.filter((p) => p !== target)
+    return found
+  }
+
+  for (const bot of allBotInstances) {
+    disconnectBotInstance(bot, 'Stopped by user')
+  }
+  allBotInstances.clear()
+
+  for (const [uname, bot] of activeBots.entries()) {
+    disconnectBotInstance(bot, 'Stopped by user')
+  }
+  activeBots.clear()
+  playerList = []
+
+  return true
+}
+
 async function exeAll(command) {
   if (!command) return
+  if (command === 'disconnect') {
+    return stopAllBots()
+  }
   let list = playerList && playerList.length ? playerList : Array.from(activeBots.keys())
   const cmd = command.split(' ')
   if (list.length == 0) return notify('Error', 'No bots selected', 'error')
@@ -767,6 +851,10 @@ function getProxy(proxyType) {
 }
 
 function newBot(options) {
+  if (stopBot) {
+    console.log('[Bot] Not connecting because bot is stopped.')
+    return
+  }
   let bot
   let manualDisconnect = false
   let wasKicked = false
@@ -845,6 +933,7 @@ function newBot(options) {
       sendEvent(options.username, 'authmsg', data.user_code)
     }
   })
+  allBotInstances.add(bot)
   applySpoof(bot)
   bot._client.on('connect', () => {
     const socket = bot._client.socket
@@ -856,22 +945,34 @@ function newBot(options) {
   })
   bot.loadPlugin(pathfinder)
   bot.on('goal_reached', () => {
-    sendEvent(bot._client.username, 'chat', 'Pathfinder: goal reached')
+    const uname = bot._client?.username || options.username
+    sendEvent(uname, 'chat', 'Pathfinder: goal reached')
   })
 
   let hitTimer = 0
 
   bot.once('login', () => {
-    activeBots.set(bot._client.username, bot)
-    sendEvent(bot._client.username, 'login')
-    if (storeinfo().boolean.runOnConnect) {
-      startScript(bot._client.username)
+    if (stopBot || manualDisconnect || bot._manualDisconnect) {
+      disconnectBotInstance(bot, 'Stopped by user')
+      return
+    }
+    const uname = bot._client?.username || options.username
+    if (uname) {
+      activeBots.set(uname, bot)
+      sendEvent(uname, 'login')
+    }
+    if (storeinfo().boolean.runOnConnect && uname) {
+      startScript(uname)
     }
     if (storeinfo().value.joinMessage) {
       bot.chat(storeinfo().value.joinMessage)
     }
   })
   bot.once('spawn', () => {
+    const uname = bot._client?.username || options.username
+    if (uname && !activeBots.has(uname)) {
+      activeBots.set(uname, bot)
+    }
     bot.loadPlugin(antiafk)
     bot.pathfinder.setMovements(new Movements(bot))
     sendInventory(bot)
@@ -913,8 +1014,20 @@ function newBot(options) {
   })
   bot.once('kicked', (reason) => {
     wasKicked = true
-    activeBots.delete(bot._client.username)
+    const uname = bot._client?.username || options.username
+    if (uname && activeBots.get(uname) === bot) {
+      activeBots.delete(uname)
+    }
+    allBotInstances.delete(bot)
     botApi.off('botEvent', botEventHandler)
+    try {
+      if (bot._client && typeof bot._client.end === 'function') {
+        bot._client.end('Kicked by server')
+      }
+      if (bot._client?.socket && typeof bot._client.socket.destroy === 'function') {
+        bot._client.socket.destroy()
+      }
+    } catch (_) {}
     let parsedReason = reason
     if (typeof reason === 'string') {
       try {
@@ -928,32 +1041,41 @@ function newBot(options) {
       cleanText(parsedReason).trim() ||
       safeStringify(parsedReason) ||
       'Disconnected by server'
-    sendEvent(bot._client.username, 'kicked', readableReason)
+    sendEvent(uname || 'Bot', 'kicked', readableReason)
   })
   bot.once('end', (reason) => {
-    activeBots.delete(bot._client.username)
+    allBotInstances.delete(bot)
+    const uname = bot._client?.username || options.username
+    if (uname && activeBots.get(uname) === bot) {
+      activeBots.delete(uname)
+    }
     botApi.off('botEvent', botEventHandler)
     const detailedReason =
       reason === 'socketClosed' && lastConnectionError
         ? `${reason}: ${lastConnectionError}`
         : reason
-    const unexpectedSocketClose = reason === 'socketClosed' && !manualDisconnect && !wasKicked
-    const reconnecting = storeinfo().boolean.autoReconnect || unexpectedSocketClose
+    const isManual = manualDisconnect || Boolean(bot._manualDisconnect)
+    const unexpectedSocketClose = reason === 'socketClosed' && !isManual && !wasKicked
+    const reconnecting = !stopBot && !isManual && (storeinfo().boolean.autoReconnect || unexpectedSocketClose)
     if (!wasKicked || reconnecting) {
       sendEvent(
-        bot._client.username,
+        uname || 'Bot',
         reconnecting ? 'reconnecting' : 'end',
         reconnecting ? 'Connection interrupted; reconnecting…' : detailedReason
       )
     }
     if (reconnecting) {
       const reconnectOptions = { ...options }
-      setTimeout(
+      const timer = setTimeout(
         () => {
-          newBot(reconnectOptions)
+          pendingReconnectTimeouts.delete(timer)
+          if (!stopBot) {
+            newBot(reconnectOptions)
+          }
         },
         Math.max(1000, Number(storeinfo().value.reconnectDelay) || 1000)
       )
+      pendingReconnectTimeouts.add(timer)
     }
   })
 
@@ -1009,12 +1131,20 @@ function newBot(options) {
   }
 
   const botEventHandler = (target, event, ...options) => {
-    if (target !== bot._client.username) return
+    const uname = bot._client?.username || options.username
+    if (target !== '*' && target !== uname) return
     const optionsArray = options[0]
     switch (event) {
       case 'disconnect':
         manualDisconnect = true
-        bot.quit()
+        bot._manualDisconnect = true
+        try {
+          bot.quit('User disconnected')
+        } catch (_) {}
+        try {
+          bot._client?.end?.('User disconnected')
+          bot._client?.socket?.destroy?.()
+        } catch (_) {}
         break
       case 'chat':
         const bypass = storeinfo().boolean.bypassChat ? ' ' + salt(crypto.randomInt(2, 6)) : ''
@@ -1169,7 +1299,10 @@ const {
   startOrRestartDiscordBot,
   syncAllDiscordGuildsNow,
   notifyDiscordOrder,
-  getDiscordBotStatus
+  getDiscordBotStatus,
+  loadStoredReviews,
+  saveStoredReviews,
+  postReviewToDiscordChannel
 } = require('./discord-bot/dist/runner.js')
 
 setTimeout(() => {
@@ -1293,6 +1426,24 @@ async function syncWithBluxmartCloud() {
           await notifyDiscordOrder(queued)
         }
       }
+    }
+
+    // Periodic reviews sync with cloud
+    const storedReviews = loadStoredReviews()
+    if (storedReviews.length > 0 && Math.random() < 0.25) {
+      await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
+        method: 'POST',
+        headers: {
+          'User-Agent': 'Bluxmart-AutoDelivery/1.0',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SYNC_SECRET}`,
+          'x-bot-secret': SYNC_SECRET,
+        },
+        body: JSON.stringify({
+          syncType: 'reviews',
+          reviews: storedReviews.slice(0, 50)
+        })
+      }).catch(() => {})
     }
   } catch (err) {
     lastSyncError = err.message
@@ -1578,6 +1729,46 @@ const handleHttpRequest = async (req, res) => {
     return sendJson(res, 202, { ok: true, message: 'Order added to delivery queue', order })
   }
 
+  // 4b. Reviews Endpoints (Sync reviews between Discord Bot & Website)
+  if (req.method === 'GET' && pathname === '/api/discord/reviews') {
+    const reviews = loadStoredReviews()
+    return sendJson(res, 200, { ok: true, reviews })
+  }
+
+  if (req.method === 'POST' && pathname === '/api/discord/review') {
+    const authHeader = req.headers['authorization'] || ''
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+    const secret = String(bearer || req.headers['x-bot-secret'] || req.headers['x-webhook-secret'] || '')
+    const hasValidSecret = verifyWebhookSecret(secret)
+    const session = getSession(req)
+    if (!hasValidSecret && !session) {
+      return sendJson(res, 401, { error: 'Unauthorized review dispatch' })
+    }
+    const body = await readJsonBody(req)
+    if (!body || !body.comment) {
+      return sendJson(res, 400, { error: 'Invalid review payload' })
+    }
+    const review = {
+      id: body.id || `rev_site_${Date.now()}`,
+      author: String(body.author || 'Customer').trim(),
+      avatarUrl: body.avatarUrl || `https://mc-heads.net/avatar/${encodeURIComponent(body.author || 'Steve')}/64`,
+      stars: Math.max(1, Math.min(5, parseInt(body.stars) || 5)),
+      comment: String(body.comment).trim(),
+      source: body.source || 'site',
+      itemPurchased: body.itemPurchased || undefined,
+      orderId: body.orderId || undefined,
+      createdAt: body.createdAt || Date.now()
+    }
+    const existing = loadStoredReviews()
+    const isDup = existing.some(r => (r.id && r.id === review.id) || (review.orderId && r.orderId === review.orderId))
+    if (!isDup) {
+      existing.unshift(review)
+      saveStoredReviews(existing)
+    }
+    await postReviewToDiscordChannel(review).catch(() => {})
+    return sendJson(res, 200, { ok: true, review })
+  }
+
   // 5. Auth Middleware for Dashboard Root & API
   const session = getSession(req)
 
@@ -1736,22 +1927,23 @@ const handleHttpRequest = async (req, res) => {
     if (req.method === 'POST' && pathname === '/api/bot/action') {
       const body = await readJsonBody(req)
       const action = body?.action
+      const target = body?.target || '*'
       if (action === 'start') {
+        stopBot = false
         connectBot()
         broadcastToRenderer('bot_action', 'Starting bot connection...')
       } else if (action === 'stop') {
-        stopBot = true
-        exeAll('disconnect')
-        broadcastToRenderer('bot_action', 'Disconnected bot.')
+        stopAllBots(target)
+        broadcastToRenderer('bot_action', target === '*' ? 'Disconnected all bots.' : `Disconnected bot ${target}.`)
       } else if (action === 'reconnect') {
+        stopAllBots(target)
         stopBot = false
-        exeAll('disconnect')
         setTimeout(() => connectBot(), 2000)
         broadcastToRenderer('bot_action', 'Reconnecting bot in 2s...')
       } else {
         return sendJson(res, 400, { error: `Unknown bot action: ${action}` })
       }
-      return sendJson(res, 200, { ok: true, action })
+      return sendJson(res, 200, { ok: true, action, target })
     }
 
     if (req.method === 'POST' && pathname === '/api/bot/chat') {

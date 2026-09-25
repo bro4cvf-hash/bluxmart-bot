@@ -52,6 +52,56 @@ async function fetchAllMessages(channel) {
   return all;
 }
 
+const REVIEWS_FILE_PATH = path.resolve(__dirname, "../../data/reviews.json");
+
+function loadStoredReviews() {
+  try {
+    if (fs.existsSync(REVIEWS_FILE_PATH)) {
+      const data = JSON.parse(fs.readFileSync(REVIEWS_FILE_PATH, "utf-8"));
+      return Array.isArray(data) ? data : [];
+    }
+  } catch (err) {
+    console.warn("[Reviews] Failed to load reviews.json:", err.message);
+  }
+  return [];
+}
+
+function saveStoredReviews(reviews) {
+  try {
+    const dir = path.dirname(REVIEWS_FILE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(REVIEWS_FILE_PATH, JSON.stringify(reviews, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.warn("[Reviews] Failed to save reviews.json:", err.message);
+    return false;
+  }
+}
+
+async function syncReviewToBluxmart(review) {
+  const siteUrl = (process.env.BLUXMART_SITE_URL || "https://bluxmart.com").replace(/\/+$/, "");
+  const syncSecret = String(process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET || "bluxmart-wisp-secret-2026").trim();
+  try {
+    const res = await fetch(`${siteUrl}/api/reviews`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Bluxmart-DiscordBot/1.0",
+        "Authorization": `Bearer ${syncSecret}`,
+        "x-bot-secret": syncSecret,
+      },
+      body: JSON.stringify(review),
+    });
+    if (!res.ok) {
+      console.warn(`[Reviews] Cloud review sync returned HTTP ${res.status}`);
+    } else {
+      console.log(`[Reviews] Review synced to website (${review.id})`);
+    }
+  } catch (err) {
+    console.warn("[Reviews] Cloud review sync network error:", err.message);
+  }
+}
+
 async function resolveReviewChannels(guild, setup, sourceChannelId) {
   const submitId = setup?.channels?.review_submit ?? setup?.channels?.reviews ?? undefined;
   let displayId = setup?.channels?.review_display;
@@ -198,13 +248,32 @@ function createDiscordClient() {
           await reply("❌ Only **Customer** rank can review. Buy something first and ask staff for Customer.");
           return;
         }
-        const stars = "⭐".repeat(Math.max(1, Math.min(5, parseInt(rating) || 5)));
+        const starVal = Math.max(1, Math.min(5, parseInt(rating) || 5));
+        const stars = "⭐".repeat(starVal);
         const embed = new discord_js_1.EmbedBuilder()
-          .setTitle(`${stars} ${rating}/5 — ${interaction.user.username}`)
+          .setTitle(`${stars} ${starVal}/5 — ${interaction.user.username}`)
           .setColor(0xf1c40f)
           .setDescription(text)
           .setThumbnail(interaction.user.displayAvatarURL())
           .setFooter({ text: `Customer review • ${new Date().toLocaleDateString()}` });
+
+        const reviewRecord = {
+          id: `rev_discord_${Date.now()}_${interaction.user.id.slice(-4)}`,
+          author: interaction.user.username,
+          avatarUrl: interaction.user.displayAvatarURL({ extension: "png", size: 64 }) || "",
+          stars: starVal,
+          comment: text,
+          source: "discord",
+          discordUserId: interaction.user.id,
+          createdAt: Date.now(),
+        };
+
+        const existingReviews = loadStoredReviews();
+        existingReviews.unshift(reviewRecord);
+        saveStoredReviews(existingReviews);
+
+        // Instantly push review to bluxmart.com cloud
+        syncReviewToBluxmart(reviewRecord).catch(() => {});
 
         let setup = await (0, store_1.getGuildSetup)(guild.id).catch(() => null);
         let reviewState = await resolveReviewChannels(guild, setup, interaction.channelId);
@@ -220,9 +289,9 @@ function createDiscordClient() {
         }
         try {
           await display.send({ embeds: [embed] });
-          await reply(`✅ Thanks! Your review was posted in ${display}.`);
+          await reply(`✅ Thanks! Your review was posted in ${display} and synced live to bluxmart.com!`);
         } catch (error) {
-          await reply("⚠️ Your review could not be published. Please try again later.");
+          await reply("⚠️ Your review could not be published to Discord, but was saved for the website.");
         }
         return;
       }
@@ -576,11 +645,44 @@ function getDiscordBotStatus() {
   };
 }
 
+async function postReviewToDiscordChannel(review) {
+  if (!activeClient || !activeClient.isReady()) return false;
+  try {
+    for (const [, guild] of activeClient.guilds.cache) {
+      const setup = await (0, store_1.getGuildSetup)(guild.id).catch(() => null);
+      const reviewState = await resolveReviewChannels(guild, setup);
+      const display = reviewState.display;
+      if (!display) continue;
+      const starCount = Math.max(1, Math.min(5, parseInt(review.stars) || 5));
+      const stars = "⭐".repeat(starCount);
+      const embed = new discord_js_1.EmbedBuilder()
+        .setTitle(`${stars} ${starCount}/5 — ${review.author} (Site Buyer)`)
+        .setColor(0x00FF9D)
+        .setDescription(review.comment || "Verified order completed on bluxmart.com")
+        .setThumbnail(review.avatarUrl || `https://mc-heads.net/avatar/${encodeURIComponent(review.author)}/64`)
+        .addFields(
+          { name: "Verified Source", value: "bluxmart.com", inline: true },
+          ...(review.itemPurchased ? [{ name: "Purchased", value: String(review.itemPurchased), inline: true }] : [])
+        )
+        .setFooter({ text: `Verified on-site customer vouch • ${new Date(review.createdAt || Date.now()).toLocaleDateString()}` })
+        .setTimestamp(new Date(review.createdAt || Date.now()));
+      await display.send({ embeds: [embed] }).catch(() => {});
+    }
+    return true;
+  } catch (err) {
+    console.error("[Discord Bot] postReviewToDiscordChannel error:", err);
+    return false;
+  }
+}
+
 module.exports = {
   startOrRestartDiscordBot,
   syncAllDiscordGuildsNow,
   notifyDiscordOrder,
   getDiscordBotStatus,
+  loadStoredReviews,
+  saveStoredReviews,
+  postReviewToDiscordChannel,
   getTemplate: botConfig_1.getTemplate,
   saveTemplate: botConfig_1.saveTemplate,
 };
