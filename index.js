@@ -1354,14 +1354,16 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
     const botName = primaryBot?._client?.username || 'Bluxmart'
     sendEvent(botName, 'chat', msg)
   },
-  onStatusChange: async (order) => {
+  onStatusChange: async (order, extra = {}) => {
     const botName = getPrimaryDeliveryBot()?._client?.username || 'Bluxmart'
     const orderId = order.id || order.orderId
     const recipient = order.recipient || order.minecraftUsername
     const status = (order.status || '').toUpperCase()
     const errInfo = order.lastError ? ` - ${order.lastError}` : ''
+    const currentStep = order.currentStep || extra.currentStep || null
+
     sendEvent(botName, 'chat', `[Bluxmart] Order ${orderId} (${recipient}) -> ${status}${errInfo}`)
-    broadcastToRenderer('delivery_status', orderId, recipient, order.status, order.lastError || null)
+    broadcastToRenderer('delivery_status', orderId, recipient, order.status, order.lastError || null, currentStep, order)
     await reportStatusToBluxmart(order)
     await notifyDiscordOrder(order)
   }

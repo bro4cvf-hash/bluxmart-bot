@@ -131,6 +131,27 @@
         </div>
       </div>
 
+      <!-- ACTIVE DELIVERY CONNECTED PIPELINE GRAPH -->
+      <div class="card active-delivery-card" id="overview-delivery-container" style="display: none; margin-bottom: 20px;">
+        <div class="card-header-flex" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="pulse-beacon delivering"></span>
+            <div>
+              <h3 style="margin: 0; font-size: 15px;">Live Delivery Pipeline</h3>
+              <span class="muted" id="overview-delivery-meta" style="font-size: 12px;">Order #— • Delivering to —</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge blue" id="overview-delivery-step-badge">In Progress</span>
+          </div>
+        </div>
+        <div class="delivery-stepper" id="overview-delivery-stepper"></div>
+        <div id="overview-delivery-alert" class="stepper-hazard-alert" style="display: none;">
+          <span class="hazard-icon">⚠️</span>
+          <span id="overview-delivery-alert-text">Hazard detected</span>
+        </div>
+      </div>
+
       <!-- Recent Orders & Event Stream Split -->
       <div class="section split-grid">
         <div class="card">
@@ -176,6 +197,27 @@
         <button class="btn btn-primary" id="btn-open-create-order-modal">
           <span>➕</span> Create Manual Order
         </button>
+      </div>
+
+      <!-- ACTIVE DELIVERY CONNECTED PIPELINE GRAPH -->
+      <div class="card active-delivery-card" id="active-delivery-container" style="display: none; margin-bottom: 20px;">
+        <div class="card-header-flex" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="pulse-beacon delivering"></span>
+            <div>
+              <h3 style="margin: 0; font-size: 15px;">Live Delivery Mission Control</h3>
+              <span class="muted" id="active-delivery-meta" style="font-size: 12px;">Order #— • Delivering to —</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge blue" id="active-delivery-step-badge">In Progress</span>
+          </div>
+        </div>
+        <div class="delivery-stepper" id="delivery-stepper-graph"></div>
+        <div id="delivery-stepper-alert" class="stepper-hazard-alert" style="display: none;">
+          <span class="hazard-icon">⚠️</span>
+          <span id="delivery-stepper-alert-text">Hazard detected</span>
+        </div>
       </div>
 
       <div class="card">

@@ -149,12 +149,40 @@ function handleSSEEvent(channel, args) {
     appendTerminalLine(terminal, `[Error] ${args.join(' ')}`, 'error');
     appendTerminalLine(overviewTerm, `[Error] ${args.join(' ')}`, 'error');
   } else if (channel === 'delivery_status') {
-    const [orderId, recipient, status, err] = args;
-    const type = status === 'failed' ? 'error' : (status === 'completed' ? 'success' : 'info');
+    const [orderId, recipient, status, err, currentStep, fullOrder] = args;
+    const type = (status === 'failed' || status === 'aborted') ? 'error' : (status === 'completed' ? 'success' : 'info');
     const msg = `[Order] ${orderId} (${recipient}) ${status}${err ? `: ${err}` : ''}`;
     appendTerminalLine(terminal, msg, type);
     appendTerminalLine(overviewTerm, msg, type);
-    loadStatus();
+
+    // Update order in QUEUE array directly
+    let existing = (QUEUE || []).find((o) => (o.id || o.orderId) === orderId);
+    if (existing) {
+      if (fullOrder && typeof fullOrder === 'object') {
+        Object.assign(existing, fullOrder);
+      }
+      if (recipient) existing.recipient = recipient;
+      if (status) existing.status = status;
+      if (err !== undefined) existing.lastError = err;
+      if (currentStep !== undefined && currentStep !== null) existing.currentStep = currentStep;
+      existing.updatedAt = Date.now();
+    } else {
+      const newOrder = (fullOrder && typeof fullOrder === 'object') ? { ...fullOrder } : {
+        id: orderId,
+        orderId,
+        recipient,
+        status,
+        lastError: err,
+        currentStep,
+        updatedAt: Date.now()
+      };
+      if (!QUEUE) QUEUE = [];
+      QUEUE.unshift(newOrder);
+    }
+
+    renderActiveDeliveryStepper(QUEUE);
+    renderOverviewOrders();
+    renderDeliveryQueue();
   } else if (channel === 'botEvent') {
     const info = args[0] || {};
     if (info.event === 'chat') {
@@ -326,6 +354,7 @@ async function loadStatus() {
     // Render Queues
     renderDeliveryQueue();
     renderOverviewOrders();
+    renderActiveDeliveryStepper(QUEUE);
   } catch (err) {
     console.error('[loadStatus error]', err);
   }
@@ -337,8 +366,208 @@ $('refresh')?.addEventListener('click', async () => {
 });
 
 // =============================================================================
-// 3. Auto-Delivery Queue Management
+// 3. Auto-Delivery Queue Management & Stepper
 // =============================================================================
+const DELIVERY_STEPS = [
+  { key: 'online_check', label: 'Online Check', icon: '👤' },
+  { key: 'ec_prep',      label: 'Base & EC Prep', icon: '🏠' },
+  { key: 'withdraw',     label: 'Retrieving Items', icon: '💎' },
+  { key: 'tpa_request',  label: 'Sending TPA',   icon: '✉️' },
+  { key: 'teleport',     label: 'Teleporting',   icon: '⚡' },
+  { key: 'safety_check', label: 'Safety Check',  icon: '🛡️' },
+  { key: 'toss_items',   label: 'Tossing Items', icon: '🎁' },
+  { key: 'return_home',  label: 'Returning /home 1', icon: '🏠' },
+  { key: 'completed',    label: 'Delivered',     icon: '✅' }
+];
+
+function renderActiveDeliveryStepper(queue) {
+  const q = queue || QUEUE || [];
+  const now = Date.now();
+  const isRecent = (o) => {
+    const t = o.updatedAt || o.completedAt || o.failedAt || o.timestamp || o.time;
+    if (!t) return false;
+    const ts = typeof t === 'number' ? t : new Date(t).getTime();
+    return !isNaN(ts) && (now - ts) < 20000;
+  };
+
+  const activeOrder = q.find((o) => o.status === 'delivering') ||
+                      q.find((o) => (o.status === 'completed' || o.status === 'failed' || o.status === 'aborted') && isRecent(o));
+
+  const activeCont = $('active-delivery-container');
+  const overviewCont = $('overview-delivery-container');
+
+  if (!activeOrder) {
+    if (activeCont) activeCont.style.display = 'none';
+    if (overviewCont) overviewCont.style.display = 'none';
+    return;
+  }
+
+  if (activeCont) activeCont.style.display = 'block';
+  if (overviewCont) overviewCont.style.display = 'block';
+
+  // Compute current step index using activeOrder.currentStep (fallback to deduction)
+  let currentStepIndex = -1;
+  const rawStep = activeOrder.currentStep;
+  if (rawStep !== undefined && rawStep !== null && rawStep !== '') {
+    if (typeof rawStep === 'number') {
+      if (rawStep >= 0 && rawStep < DELIVERY_STEPS.length) currentStepIndex = rawStep;
+      else if (rawStep >= 1 && rawStep <= DELIVERY_STEPS.length) currentStepIndex = rawStep - 1;
+    } else {
+      const s = String(rawStep).toLowerCase().trim();
+      currentStepIndex = DELIVERY_STEPS.findIndex((st) => st.key.toLowerCase() === s || st.label.toLowerCase() === s);
+      if (currentStepIndex === -1) {
+        if (s.includes('online')) currentStepIndex = 0;
+        else if (s.includes('prep') || s.includes('ec') || s.includes('base')) currentStepIndex = 1;
+        else if (s.includes('withdr') || s.includes('retriev') || s.includes('item')) currentStepIndex = 2;
+        else if (s.includes('tpa')) currentStepIndex = 3;
+        else if (s.includes('teleport') || s.includes('tp')) currentStepIndex = 4;
+        else if (s.includes('safe') || s.includes('hazard')) currentStepIndex = 5;
+        else if (s.includes('toss') || s.includes('drop')) currentStepIndex = 6;
+        else if (s.includes('home') || s.includes('return')) currentStepIndex = 7;
+        else if (s.includes('complete') || s.includes('deliver')) currentStepIndex = 8;
+      }
+    }
+  }
+
+  // Fallback deduction
+  if (currentStepIndex === -1) {
+    if (activeOrder.status === 'completed') {
+      currentStepIndex = DELIVERY_STEPS.length - 1;
+    } else if (activeOrder.status === 'queued') {
+      currentStepIndex = 0;
+    } else {
+      const err = String(activeOrder.lastError || activeOrder.err || activeOrder.error || '').toLowerCase();
+      if (activeOrder.hazard || err.includes('hazard') || err.includes('safety') || err.includes('lava') || err.includes('enemy') || err.includes('pvp')) {
+        currentStepIndex = 5; // safety_check
+      } else if (err.includes('offline') || err.includes('not online')) {
+        currentStepIndex = 0; // online_check
+      } else if (err.includes('chest') || err.includes('withdraw') || err.includes('stock')) {
+        currentStepIndex = 2; // withdraw
+      } else if (err.includes('tpa') || err.includes('not accepted') || err.includes('timeout')) {
+        currentStepIndex = 3; // tpa_request
+      } else if (err.includes('teleport') || err.includes('tp')) {
+        currentStepIndex = 4; // teleport
+      } else if (err.includes('toss') || err.includes('drop')) {
+        currentStepIndex = 6; // toss_items
+      } else if (err.includes('home')) {
+        currentStepIndex = 7; // return_home
+      } else {
+        currentStepIndex = 0;
+      }
+    }
+  }
+
+  const isCompletedOrder = activeOrder.status === 'completed';
+  const isHazard = Boolean(
+    activeOrder.hazard ||
+    activeOrder.status === 'aborted' ||
+    activeOrder.status === 'failed' ||
+    (activeOrder.lastError && /hazard|abort|safety|threat|danger|lava|pvp/i.test(activeOrder.lastError))
+  );
+
+  // Update order header meta and status badges
+  const orderId = activeOrder.id || activeOrder.orderId || '—';
+  const recipient = activeOrder.recipient || activeOrder.minecraftUsername || '—';
+  const metaText = `Order #${orderId} • Delivering to ${recipient}`;
+  if ($('overview-delivery-meta')) $('overview-delivery-meta').textContent = metaText;
+  if ($('active-delivery-meta')) $('active-delivery-meta').textContent = metaText;
+
+  let badgeText = 'In Progress';
+  let badgeClass = 'badge blue';
+  if (isCompletedOrder) {
+    badgeText = 'Delivered';
+    badgeClass = 'badge green';
+  } else if (isHazard) {
+    badgeText = 'Hazard Aborted';
+    badgeClass = 'badge red';
+  } else if (DELIVERY_STEPS[currentStepIndex]) {
+    badgeText = DELIVERY_STEPS[currentStepIndex].label;
+    badgeClass = 'badge blue';
+  }
+  if ($('overview-delivery-step-badge')) {
+    $('overview-delivery-step-badge').textContent = badgeText;
+    $('overview-delivery-step-badge').className = badgeClass;
+  }
+  if ($('active-delivery-step-badge')) {
+    $('active-delivery-step-badge').textContent = badgeText;
+    $('active-delivery-step-badge').className = badgeClass;
+  }
+
+  // Build stepper nodes and connector links
+  let html = '';
+  for (let i = 0; i < DELIVERY_STEPS.length; i++) {
+    const step = DELIVERY_STEPS[i];
+    let nodeClass = 'pending';
+    let icon = step.icon;
+
+    if (isCompletedOrder) {
+      nodeClass = 'completed';
+      icon = '✓';
+    } else if (isHazard) {
+      if (i < currentStepIndex) {
+        nodeClass = 'completed';
+        icon = '✓';
+      } else if (i === currentStepIndex) {
+        nodeClass = 'hazard_aborted';
+        icon = '⚠️';
+      } else {
+        nodeClass = 'pending';
+        icon = step.icon;
+      }
+    } else {
+      if (i < currentStepIndex) {
+        nodeClass = 'completed';
+        icon = '✓';
+      } else if (i === currentStepIndex) {
+        nodeClass = 'active';
+        icon = step.icon;
+      } else {
+        nodeClass = 'pending';
+        icon = step.icon;
+      }
+    }
+
+    html += `<div class="stepper-node ${nodeClass}">` +
+              `<div class="node-circle">${icon}</div>` +
+              `<div class="node-label">${esc(step.label)}</div>` +
+            `</div>`;
+
+    if (i < DELIVERY_STEPS.length - 1) {
+      let linkClass = '';
+      if (isCompletedOrder) {
+        linkClass = 'completed';
+      } else if (i < currentStepIndex) {
+        linkClass = 'completed';
+      } else if (i === currentStepIndex && !isHazard) {
+        linkClass = 'active';
+      }
+      html += `<div class="stepper-link ${linkClass}"></div>`;
+    }
+  }
+
+  const graphEl = $('delivery-stepper-graph');
+  if (graphEl) graphEl.innerHTML = html;
+  const overviewGraphEl = $('overview-delivery-stepper');
+  if (overviewGraphEl) overviewGraphEl.innerHTML = html;
+
+  // Hazard Alert message handling
+  const hazardAlertEl = $('delivery-stepper-alert');
+  const overviewAlertEl = $('overview-delivery-alert');
+  const hazardTextEl = $('delivery-stepper-alert-text');
+  const overviewTextEl = $('overview-delivery-alert-text');
+
+  if (isHazard) {
+    const errMsg = activeOrder.lastError || (activeOrder.hazard ? `Hazard "${activeOrder.hazard.name || 'Threat'}" detected in vicinity. Delivery aborted!` : 'Delivery aborted due to hazard.');
+    if (hazardAlertEl) hazardAlertEl.style.display = 'flex';
+    if (overviewAlertEl) overviewAlertEl.style.display = 'flex';
+    if (hazardTextEl) hazardTextEl.textContent = errMsg;
+    if (overviewTextEl) overviewTextEl.textContent = errMsg;
+  } else {
+    if (hazardAlertEl) hazardAlertEl.style.display = 'none';
+    if (overviewAlertEl) overviewAlertEl.style.display = 'none';
+  }
+}
+
 function formatOrderItems(order) {
   const parts = [];
   if (Number(order.money) > 0) parts.push(`💸 $${Number(order.money).toLocaleString()}`);

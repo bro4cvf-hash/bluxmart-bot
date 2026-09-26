@@ -120,6 +120,9 @@ export class DeliveryQueueManager {
   }
 
   async notifyUpdate(order, extra = {}) {
+    if (extra && extra.currentStep) {
+      order.currentStep = extra.currentStep
+    }
     if (extra && extra.chatMessage) {
       order.lastChatMessage = extra.chatMessage
     }
@@ -287,8 +290,9 @@ export class DeliveryQueueManager {
       itemsSummary: order.itemsSummary || '',
       moneyDelivered,
       itemsDelivered,
-      attempts: 0,
       status: moneyDelivered && itemsDelivered ? 'completed' : 'pending',
+      currentStep: null,
+      attempts: 0,
       lastError: null,
       nextAttemptAt: 0,
       createdAt: order.createdAt || Date.now(),
@@ -650,6 +654,8 @@ export class DeliveryQueueManager {
       }
 
       // Pre-flight Online Check: Confirm buyer is online via tab complete right before physical handling
+      order.currentStep = 'online_check'
+      await this.notifyUpdate(order, { currentStep: 'online_check' })
       this.log(`[DELIVERY] [${order.orderId}] Step 1: Checking buyer ${username} online status...`)
       const isOnline = await isPlayerOnline(bot, username)
       if (!isOnline) {
@@ -671,6 +677,8 @@ export class DeliveryQueueManager {
       this.log(`[DELIVERY] [${order.orderId}] Step 2: Preparing base & Ender Chest...`)
 
       // Step 2a: Ensure any open window is closed and return to base only if not near Ender Chest
+      order.currentStep = 'ec_prep'
+      await this.notifyUpdate(order, { currentStep: 'ec_prep' })
       if (bot.currentWindow) {
         try { bot.closeWindow(bot.currentWindow) } catch {}
         await delay(200)
@@ -696,6 +704,8 @@ export class DeliveryQueueManager {
       }
 
       // Step 2c: Withdraw exact items ordered from Ender Chest
+      order.currentStep = 'withdraw'
+      await this.notifyUpdate(order, { currentStep: 'withdraw' })
       if (order.spawners > 0 || order.elytras > 0) {
         this.log(
           `[DELIVERY] [${order.orderId}] Step 2c: Looking at Ender Chest and withdrawing ${order.spawners || 0}x Spawner, ${order.elytras || 0}x Elytra...`
@@ -737,6 +747,8 @@ export class DeliveryQueueManager {
 
       let tpResult
       try {
+        order.currentStep = 'tpa_request'
+        await this.notifyUpdate(order, { currentStep: 'tpa_request' })
         this.log(`[DELIVERY] [${order.orderId}] Step 2d: Sending /tpa ${username}...`)
         safeChat(bot, `/tpa ${username}`)
         await delay(600)
@@ -804,9 +816,15 @@ export class DeliveryQueueManager {
         return
       }
 
+      // Teleport confirmed
+      order.currentStep = 'teleport'
+      await this.notifyUpdate(order, { currentStep: 'teleport' })
+
       await delay(750)
 
       // Step 2e: Enhanced Safety & Hazard Verification
+      order.currentStep = 'safety_check'
+      await this.notifyUpdate(order, { currentStep: 'safety_check' })
       const safetyResult = checkAreaSafety(bot, this.safetyRadius, username)
       if (!safetyResult.safe) {
         const hazard = safetyResult.hazard
@@ -816,13 +834,11 @@ export class DeliveryQueueManager {
         )
         safeChat(
           bot,
-          `/msg ${username} [Bluxmart] ⚠️ DELIVERY ABORTED! Detected ${hazard.name} nearby! Move to a safe location.`
+          `/msg ${username} [Bluxmart] ⚠️ DELIVERY ABORTED! Hazardous area detected (${hazard.name})! Please move to a safe, clear location and whisper "claim" when ready.`
         )
         // Teleport /home 1 and wait for base arrival before touching Ender Chest (EC-06)
         await this.returnToBaseSafely(bot, startBasePos, 8000)
-        if (order.spawners > 0 || order.elytras > 0) {
-          await depositBackToEnderChest(bot)
-        }
+        await depositBackToEnderChest(bot)
         const reachedMax = order.attempts >= this.maxRetries
         order.status = reachedMax ? 'failed' : 'waiting_for_player'
         order.lastError = `Unsafe drop area: ${hazard.name} within ${hazard.distance} blocks`
@@ -840,12 +856,18 @@ export class DeliveryQueueManager {
       this.log(`[DELIVERY] Area safe around ${username}. Tossing ordered items...`)
 
       // Step 2f: Drop items with Real-Time Anti-Duplication Decrementing (EC-04)
+      order.currentStep = 'toss_items'
+      await this.notifyUpdate(order, { currentStep: 'toss_items' })
       const dropAborted = await this.tossOrderedItemsSafely(bot, username, order)
 
       if (dropAborted) {
         this.log(
           `[DELIVERY] Delivery aborted during drop for ${username}. Returning undelivered balance to Ender Chest.`,
           'warn'
+        )
+        safeChat(
+          bot,
+          `/msg ${username} [Bluxmart] ⚠️ Drop interrupted due to hazard/distance! Please move to a safe location and whisper "claim" to resume.`
         )
         await this.returnToBaseSafely(bot, startBasePos, 8000)
         await depositBackToEnderChest(bot)
@@ -879,23 +901,29 @@ export class DeliveryQueueManager {
       }
 
       // Step 2g: Successful Delivery Finalization
-      order.itemsDelivered = true
-      order.status = 'completed'
-      order.updatedAt = Date.now()
-      this.markOrderTombstoned(order.orderId)
-      this.saveQueue()
+      order.currentStep = 'return_home'
+      await this.notifyUpdate(order, { currentStep: 'return_home' })
 
       this.log(
         `[DELIVERY] ✅ Order #${order.orderId} successfully delivered to ${username}! Returning home via /home 1...`,
         'success'
       )
       await this.returnToBaseSafely(bot, startBasePos, 8000)
+
+      order.itemsDelivered = true
+      order.status = 'completed'
+      order.currentStep = 'completed'
+      order.updatedAt = Date.now()
+      this.markOrderTombstoned(order.orderId)
+      this.saveQueue()
+
       safeChat(
         bot,
         `/msg ${username} [Bluxmart] Order #${order.orderId} delivered! Thank you for buying from bluxmart.com!`
       )
 
       await this.notifyUpdate(order, {
+        currentStep: 'completed',
         chatMessage: `✅ Order #${order.orderId} has been successfully delivered in-game to ${username}!`
       })
     }

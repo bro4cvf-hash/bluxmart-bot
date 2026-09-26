@@ -186,6 +186,28 @@ export function checkAreaSafety(bot, radius = 5, buyerUsername = null) {
       if (dist > 8.0) continue
 
       const entityName = (entity.name || entity.mobType || '').toLowerCase()
+
+      // Check for dangerous entities within 5 blocks
+      if (
+        dist <= 5.0 &&
+        (entity.name === 'end_crystal' ||
+          entity.name === 'hopper_minecart' ||
+          entity.name === 'tnt' ||
+          entityName === 'end_crystal' ||
+          entityName === 'hopper_minecart' ||
+          entityName === 'tnt')
+      ) {
+        return {
+          safe: false,
+          hazard: {
+            name: entity.name || entityName,
+            position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },
+            distance: Number(dist.toFixed(2)),
+            centerType: 'dangerous_entity'
+          }
+        }
+      }
+
       if (HOSTILE_MOBS.has(entityName)) {
         return {
           safe: false,
