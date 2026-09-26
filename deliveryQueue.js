@@ -184,6 +184,13 @@ export class DeliveryQueueManager {
         item.lastError = 'Recovered from bot restart during delivery'
         needsSave = true
       }
+      if (item.status === 'failed' && item.lastError && String(item.lastError).includes('lid obstructed')) {
+        item.status = 'pending'
+        item.attempts = 0
+        item.lastError = null
+        item.nextAttemptAt = 0
+        needsSave = true
+      }
       if (item.status === 'completed' || item.status === 'cancelled') {
         if (itemId) {
           this.completedOrderIds.add(itemId)
@@ -637,14 +644,14 @@ export class DeliveryQueueManager {
         await delay(200)
       }
       let nearbyEC = bot.findBlock ? bot.findBlock({
-        matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+        matching: (block) => block && block.name === 'ender_chest',
         maxDistance: 4.5
       }) : null
       if (!nearbyEC) {
         await this.returnToBaseSafely(bot, null, 4000)
         await delay(300)
         nearbyEC = bot.findBlock ? bot.findBlock({
-          matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+          matching: (block) => block && block.name === 'ender_chest',
           maxDistance: 4.5
         }) : null
       }

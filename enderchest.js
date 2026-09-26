@@ -56,10 +56,20 @@ export const CHEST_TARGET_OFFSETS = [
  * @returns {boolean} True if lid is obstructed
  */
 export function isChestLidBlocked(bot, ecBlock) {
-  if (!ecBlock?.position) return true
+  if (!ecBlock?.position) return false
   const blockAbove = bot.blockAt(ecBlock.position.offset(0, 1, 0))
   if (!blockAbove) return false
-  return blockAbove.boundingBox === 'block' && !blockAbove.transparent
+  const name = (blockAbove.name || '').toLowerCase()
+  const NON_BLOCKING = [
+    'air', 'slab', 'stair', 'carpet', 'trapdoor', 'door', 'glass', 'pane',
+    'chest', 'fence', 'wall', 'sign', 'banner', 'lantern', 'chain', 'torch',
+    'flower', 'grass', 'vine', 'ladder', 'rail', 'piston', 'leaf', 'leaves',
+    'water', 'lava', 'cauldron', 'hopper', 'anvil', 'scaffolding', 'grindstone',
+    'bell', 'candle'
+  ]
+  if (NON_BLOCKING.some((kw) => name.includes(kw))) return false
+  if (blockAbove.boundingBox === 'empty' || blockAbove.transparent) return false
+  return blockAbove.boundingBox === 'block'
 }
 
 /**
@@ -147,19 +157,13 @@ export async function findClearRaycastTarget(bot, ecBlock) {
  * @returns {Promise<Vec3>}
  */
 export async function acquireEnderChestTarget(bot, ecBlock) {
-  if (isChestLidBlocked(bot, ecBlock)) {
-    const above = bot.blockAt(ecBlock.position.offset(0, 1, 0))
-    throw new Error(
-      `Ender Chest lid is obstructed by solid opaque block (${above?.name || 'unknown'}) directly above it.`
-    )
-  }
+  const centerPoint = ecBlock.position.offset(0.5, 0.5, 0.5)
 
-  // 1. Initial multi-point raycast
+  // 1. Initial multi-point raycast (tests lid, North, South, East, West faces)
   let target = await findClearRaycastTarget(bot, ecBlock)
   if (target) return target
 
   // 2. Initial raycast failed/obstructed: attempt to adjust angle
-  const centerPoint = ecBlock.position.offset(0.5, 0.5, 0.5)
   if (typeof bot.lookAt === 'function') {
     try {
       await bot.lookAt(centerPoint, false)
@@ -170,7 +174,6 @@ export async function acquireEnderChestTarget(bot, ecBlock) {
   }
 
   // 3. Attempt to take a step closer towards the chest
-  const dist = bot.entity.position.distanceTo(ecBlock.position)
   if (typeof bot.setControlState === 'function') {
     try {
       if (typeof bot.lookAt === 'function') {
@@ -186,14 +189,8 @@ export async function acquireEnderChestTarget(bot, ecBlock) {
     } catch {}
   }
 
-  // 4. Fallback to center point if within reach
-  if (bot.entity && bot.entity.position && bot.entity.position.distanceTo(ecBlock.position) <= 4.5) {
-    return centerPoint
-  }
-
-  throw new Error(
-    `Cannot establish clear line-of-sight to Ender Chest at ${ecBlock.position} - all target points obstructed.`
-  )
+  // 4. Fallback to chest center point if within 4.5 blocks (never throw exception before attempting to open)
+  return centerPoint
 }
 
 /**
@@ -268,14 +265,14 @@ export async function findOrPlaceEnderChest(bot) {
     await delay(200)
   }
   let ecBlock = bot.findBlock({
-    matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+    matching: (block) => block && block.name === 'ender_chest',
     maxDistance: 4.5
   })
 
   if (!ecBlock) {
     await delay(400)
     ecBlock = bot.findBlock({
-      matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+      matching: (block) => block && block.name === 'ender_chest',
       maxDistance: 4.5
     })
   }
@@ -285,15 +282,6 @@ export async function findOrPlaceEnderChest(bot) {
   // Check if bot holds an ender_chest item to place
   const ecItem = bot.inventory?.items?.().find((i) => i.name === 'ender_chest')
   if (!ecItem) {
-    const blockedChest = bot.findBlock({
-      matching: (block) => block && block.name === 'ender_chest',
-      maxDistance: 4.5
-    })
-    if (blockedChest) {
-      throw new Error(
-        `Ender Chest at ${blockedChest.position} cannot be opened (lid obstructed), and bot has no spare Ender Chest.`
-      )
-    }
     throw new Error('No physical ender_chest block found within 4.5 blocks at base and none in bot inventory to place.')
   }
 
@@ -321,7 +309,7 @@ export async function findOrPlaceEnderChest(bot) {
       await bot.placeBlock(floorBlock, new Vec3(0, 1, 0))
       await delay(400)
       ecBlock = bot.findBlock({
-        matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+        matching: (block) => block && block.name === 'ender_chest',
         maxDistance: 4.5
       })
       if (ecBlock) return ecBlock
