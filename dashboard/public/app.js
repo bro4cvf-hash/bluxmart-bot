@@ -653,7 +653,8 @@ function renderDeliveryQueue() {
       <td class="mono">${o.createdAt ? new Date(o.createdAt).toLocaleTimeString() : '—'}</td>
       <td>
         <div class="table-actions">
-          ${o.status === 'failed' || o.status === 'queued' ? `<button class="btn btn-secondary btn-sm" onclick="handleOrderAction('${esc(o.id)}', 'retry')">Retry</button>` : ''}
+          ${o.status !== 'completed' && o.status !== 'delivering' ? `<button class="btn btn-success btn-sm" onclick="handleOrderAction('${esc(o.id)}', 'start')" title="Start delivery for this order">Start Delivery</button>` : ''}
+          ${o.status === 'delivering' ? `<button class="btn btn-secondary btn-sm" disabled style="opacity:0.6;cursor:not-allowed">Delivering…</button>` : ''}
           ${o.status !== 'completed' ? `<button class="btn btn-secondary btn-sm" onclick="handleOrderAction('${esc(o.id)}', 'complete')">Done</button>` : ''}
           <button class="btn btn-danger btn-sm" onclick="handleOrderAction('${esc(o.id)}', 'delete')">Delete</button>
         </div>
@@ -671,7 +672,11 @@ window.handleOrderAction = async function (id, action) {
     if (res.queue) QUEUE = res.queue;
     renderDeliveryQueue();
     renderOverviewOrders();
-    toast(`Order ${action}d successfully`);
+    if (action === 'start') {
+      toast(`Delivery started for order #${id}`);
+    } else {
+      toast(`Order ${action}d successfully`);
+    }
   } catch (err) {
     toast(`Action failed: ${err.message}`);
   }
@@ -704,6 +709,18 @@ async function syncBluxmartCloudNow() {
 }
 $('btn-sync-cloud-now')?.addEventListener('click', syncBluxmartCloudNow);
 $('btn-quick-sync-orders')?.addEventListener('click', syncBluxmartCloudNow);
+
+$('btn-start-delivery-queue')?.addEventListener('click', async () => {
+  try {
+    const res = await api('/api/delivery/start', { method: 'POST' });
+    if (res.queue) QUEUE = res.queue;
+    renderDeliveryQueue();
+    renderOverviewOrders();
+    toast(res.message || 'Delivery started');
+  } catch (err) {
+    toast(`Failed to start delivery: ${err.message}`);
+  }
+});
 
 // Manual Order Modal
 const modal = $('create-order-modal');

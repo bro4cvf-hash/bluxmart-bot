@@ -1268,6 +1268,7 @@
                   <td style="padding: 8px;">${ruleBadge}</td>
                   <td style="padding: 8px; color: ${statusColor}; font-weight: 700; text-transform: uppercase;">${o.status}${o.error ? ` (${o.error})` : ''}</td>
                   <td style="padding: 8px; text-align: right;">
+                    ${o.status !== 'completed' ? `<button onclick="window.bluxOrderAction('${o.id}', 'start')" style="padding: 3px 7px; font-size: 11px; margin-right: 4px; background: #22c55e; color: #000; font-weight: 700; border: none; border-radius: 3px; cursor: pointer;">Start Delivery</button>` : ''}
                     <button onclick="window.bluxOrderAction('${o.id}', 'retry')" style="padding: 3px 7px; font-size: 11px; margin-right: 4px;">Retry</button>
                     <button onclick="window.bluxOrderAction('${o.id}', 'complete')" style="padding: 3px 7px; font-size: 11px; margin-right: 4px;">Done</button>
                     <button onclick="window.bluxOrderAction('${o.id}', 'delete')" style="padding: 3px 7px; font-size: 11px;">Remove</button>

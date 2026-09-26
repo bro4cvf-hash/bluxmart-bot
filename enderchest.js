@@ -274,15 +274,47 @@ export async function smoothLookAt(bot, targetPoint) {
 export const lookSmoothlyAt = smoothLookAt
 
 /**
+ * Safely closes any open container / window on both the bot client and sends
+ * the close container (close_window) packet to the server to prevent desyncs
+ * before opening an Ender Chest or interacting with storage.
+ *
+ * @param {import('mineflayer').Bot} bot
+ */
+export async function closeContainer(bot) {
+  if (!bot) return
+
+  // 1. If Mineflayer tracks an open window, close it cleanly
+  if (bot.currentWindow) {
+    try {
+      bot.closeWindow(bot.currentWindow)
+    } catch {}
+    await delay(150)
+  }
+
+  // 2. Explicitly send close container packet (close_window) to server
+  // to ensure server-side containerMenu is reset to inventoryMenu even if
+  // client state was desynced or window was already marked closed locally.
+  if (typeof bot._client?.write === 'function') {
+    try {
+      const lastId = bot.currentWindow?.id ?? bot._lastOpenedWindowId
+      if (lastId != null && lastId !== 0) {
+        bot._client.write('close_window', { windowId: lastId })
+      }
+      bot._client.write('close_window', { windowId: 0 })
+    } catch {}
+    await delay(100)
+  }
+
+  bot.currentWindow = null
+}
+
+/**
  * Finds a nearby physical Ender Chest block within 4.5 blocks, or places one from the bot's inventory.
  *
  * @param {import('mineflayer').Bot} bot
  */
 export async function findOrPlaceEnderChest(bot) {
-  if (bot.currentWindow) {
-    try { bot.closeWindow(bot.currentWindow) } catch {}
-    await delay(200)
-  }
+  await closeContainer(bot)
   let ecBlock = bot.findBlock({
     matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
     maxDistance: 4.5
@@ -349,12 +381,7 @@ export async function findOrPlaceEnderChest(bot) {
 export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   if (!bot) throw new Error('Bot missing')
 
-  if (bot.currentWindow) {
-    try {
-      bot.closeWindow(bot.currentWindow)
-    } catch {}
-    await delay(150)
-  }
+  await closeContainer(bot)
 
   // Ensure controls & sneak are released locally and via entity_action packet
   if (typeof bot.clearControlStates === 'function') {
@@ -372,14 +399,29 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
 
   // Strategy 1: Try /ec command (DonutSMP default - opens Ender Chest GUI instantly without physical block/lid obstacles)
   const tryOpenViaCommand = async (cmdTimeout = 2500) => {
-    let cleanup
+    if (bot._ecCommandSupported === false) return null
+
+    const cleanups = []
     try {
       const windowPromise = new Promise((resolve) => {
-        const handler = (win) => {
-          if (win) resolve(win)
+        const winHandler = (win) => {
+          if (win) {
+            if (win.id != null) bot._lastOpenedWindowId = win.id
+            resolve(win)
+          }
         }
-        bot.once('windowOpen', handler)
-        cleanup = () => bot.removeListener('windowOpen', handler)
+        bot.once('windowOpen', winHandler)
+        cleanups.push(() => bot.removeListener('windowOpen', winHandler))
+
+        const chatHandler = (message) => {
+          const text = typeof message === 'string' ? message : (message?.toString?.() || '')
+          if (/This command does not exist|Unknown command|Unknown or incomplete command|do not have permission/i.test(text)) {
+            bot._ecCommandSupported = false
+            resolve(null)
+          }
+        }
+        bot.on('message', chatHandler)
+        cleanups.push(() => bot.removeListener('message', chatHandler))
       })
 
       if (typeof bot.chat === 'function') {
@@ -394,11 +436,13 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
     } catch {
       return null
     } finally {
-      if (cleanup) cleanup()
+      for (const fn of cleanups) {
+        try { fn() } catch {}
+      }
     }
   }
 
-  const cmdWin = await tryOpenViaCommand(2000)
+  const cmdWin = bot._ecCommandSupported === false ? null : await tryOpenViaCommand(2000)
   if (cmdWin) return cmdWin
 
   // Strategy 2: Physical block interaction
@@ -488,6 +532,7 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   // 5. Primary attempt: open container
   const attemptTimeout = Math.max(3000, Math.floor(timeoutMs / 2))
   try {
+    await closeContainer(bot)
     let timer
     return await Promise.race([
       bot.openContainer(ecBlock, direction, cursorPos),
@@ -499,14 +544,9 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
     })
   } catch (err) {
     // 6. Fallback retry: check /ec command again or re-orient directly at center
-    if (bot.currentWindow) {
-      try {
-        bot.closeWindow(bot.currentWindow)
-      } catch {}
-      await delay(150)
-    }
+    await closeContainer(bot)
 
-    const cmdWinRetry = await tryOpenViaCommand(2000)
+    const cmdWinRetry = bot._ecCommandSupported !== false ? await tryOpenViaCommand(2000) : null
     if (cmdWinRetry) return cmdWinRetry
 
     const retryTarget = ecBlock.position.offset(0.5, 0.5, 0.5)
@@ -526,6 +566,7 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
     await delay(180)
 
     let fallbackTimer
+    await closeContainer(bot)
     return await Promise.race([
       bot.openContainer(ecBlock, new Vec3(0, 1, 0), new Vec3(0.5, 0.5, 0.5)),
       new Promise((_, reject) => {
@@ -591,10 +632,7 @@ export async function sanitizeBotInventory(bot, allowedItems = { spawners: 0, el
   const shouldClose = !container
 
   if (!container) {
-    if (bot.currentWindow) {
-      try { bot.closeWindow(bot.currentWindow) } catch {}
-      await delay(200)
-    }
+    await closeContainer(bot)
     const ecBlock = await findOrPlaceEnderChest(bot)
     container = await openEnderChestSafely(bot, ecBlock, options?.timeoutMs || 8000)
   }
@@ -661,10 +699,7 @@ export async function sanitizeBotInventory(bot, allowedItems = { spawners: 0, el
  * @param {{ spawners: number, elytras: number }} needed
  */
 export async function withdrawFromEnderChest(bot, needed) {
-  if (bot.currentWindow) {
-    try { bot.closeWindow(bot.currentWindow) } catch {}
-    await delay(200)
-  }
+  await closeContainer(bot)
 
   const targetSpawners = Math.max(0, Number(needed?.spawners) || 0)
   const targetElytras = Math.max(0, Number(needed?.elytras) || 0)

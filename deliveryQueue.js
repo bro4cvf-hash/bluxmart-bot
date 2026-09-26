@@ -6,7 +6,8 @@ import {
   depositBackToEnderChest,
   sanitizeBotInventory,
   matchesCatalogCategory,
-  isChestLidBlocked
+  isChestLidBlocked,
+  closeContainer
 } from './enderchest.js'
 
 const DEFAULT_QUEUE_FILE = path.resolve('./delivery-queue.json')
@@ -522,9 +523,7 @@ export class DeliveryQueueManager {
     }
 
     if (basePos && bot.entity && bot.entity.position.distanceTo(basePos) <= 4) {
-      if (bot.currentWindow) {
-        try { bot.closeWindow(bot.currentWindow) } catch {}
-      }
+      await closeContainer(bot)
       this.log('[DELIVERY] Successfully returned to base.')
       return true
     }
@@ -546,6 +545,7 @@ export class DeliveryQueueManager {
           try { bot.closeWindow(bot.currentWindow) } catch {}
         }
       }
+      await closeContainer(bot)
     }
 
     this.log('[DELIVERY] Executing return to base...')
@@ -555,6 +555,7 @@ export class DeliveryQueueManager {
 
     if (!basePos || !bot.entity) {
       await delay(2000)
+      await closeContainer(bot)
       this.log('[DELIVERY] Successfully returned to base.')
       return true
     }
@@ -567,6 +568,7 @@ export class DeliveryQueueManager {
       await delay(400)
       if (!bot.entity) break
       if (bot.entity.position.distanceTo(basePos) <= 8) {
+        await closeContainer(bot)
         this.log('[DELIVERY] Successfully returned to base.')
         return true
       }
@@ -877,14 +879,11 @@ export class DeliveryQueueManager {
       // Step 2a: Ensure bot returns to base (/home 1) and any open window is closed
       order.currentStep = 'ec_prep'
       await this.notifyUpdate(order, { currentStep: 'ec_prep' })
-      if (bot.currentWindow) {
-        try {
-          bot.closeWindow(bot.currentWindow)
-        } catch {}
-        await delay(200)
-      }
+      await closeContainer(bot)
       this.log(`[DELIVERY] [${order.orderId}] Step 2a: Returning to /home 1 before Ender Chest interaction...`)
       await this.returnToBaseSafely(bot, null, 8000)
+      // Send close container before interacting with Ender Chest to clear any lingering GUI from /home 1
+      await closeContainer(bot)
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
       // Step 2b: Ensure bot inventory starts clean (deposit any leftover items into Ender Chest)
       this.log(`[DELIVERY] [${order.orderId}] Step 2b: Clearing stray inventory into Ender Chest...`)
@@ -898,6 +897,7 @@ export class DeliveryQueueManager {
           `[DELIVERY] [${order.orderId}] Step 2c: Looking at Ender Chest and withdrawing ${order.spawners || 0}x Spawner, ${order.elytras || 0}x Elytra...`
         )
         try {
+          await closeContainer(bot)
           await withdrawFromEnderChest(bot, {
             spawners: order.spawners,
             elytras: order.elytras

@@ -1064,6 +1064,7 @@ function newBot(options) {
   })
   bot.on('windowOpen', (window) => {
     if (!window) return
+    bot._lastOpenedWindowId = window.id
     sendInventory(bot)
     window.on('updateSlot', () => sendInventory(bot))
     sendEvent(
@@ -1257,7 +1258,11 @@ function newBot(options) {
         })()
         break
       case 'closewindow':
-        bot.closeWindow(bot.currentWindow || '')
+        if (bot.currentWindow) {
+          try { bot.closeWindow(bot.currentWindow) } catch {}
+        } else if (typeof bot._client?.write === 'function') {
+          try { bot._client.write('close_window', { windowId: 0 }) } catch {}
+        }
         break
       case 'startmove':
         bot.setControlState(optionsArray[0], true)
@@ -1998,16 +2003,26 @@ const handleHttpRequest = async (req, res) => {
       const action = body?.action
       const idx = queueManager.queue.findIndex((o) => (o.id === id || o.orderId === id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
-      if (action === 'retry') {
+      if (action === 'retry' || action === 'start') {
         queueManager.queue[idx].status = 'pending'
         queueManager.queue[idx].attempts = 0
         queueManager.queue[idx].nextAttemptAt = 0
         queueManager.queue[idx].lastError = null
         queueManager.queue[idx].error = null
         queueManager.queue[idx].updatedAt = Date.now()
+        const [targetOrder] = queueManager.queue.splice(idx, 1)
+        queueManager.queue.unshift(targetOrder)
+
+        const primaryBot = getPrimaryDeliveryBot()
+        if (!primaryBot || !primaryBot.entity) {
+          stopBot = false
+          connectBot()
+        }
+
         queueManager.saveQueue()
         queueManager.processNext()
-        broadcastToRenderer('delivery_status', id, queueManager.queue[idx].recipient, 'pending')
+        broadcastToRenderer('delivery_status', id, targetOrder.recipient, 'pending')
+        return sendJson(res, 200, { ok: true, message: `Delivery started for order #${id}`, queue: queueManager.queue })
       } else if (action === 'complete') {
         const targetOrderId = queueManager.queue[idx].orderId || queueManager.queue[idx].id || id
         queueManager.queue[idx].status = 'completed'
@@ -2087,6 +2102,28 @@ const handleHttpRequest = async (req, res) => {
     if (req.method === 'POST' && pathname === '/api/sync-now') {
       await syncWithBluxmartCloud()
       return sendJson(res, 200, { ok: true, lastSyncAt: lastSyncTime, lastError: lastSyncError })
+    }
+
+    if (req.method === 'POST' && pathname === '/api/delivery/start') {
+      for (const order of queueManager.queue) {
+        if (order.status !== 'completed' && order.status !== 'delivering') {
+          order.nextAttemptAt = 0
+          order.lastError = null
+          order.error = null
+          if (order.status === 'waiting_for_player' || order.status === 'failed') {
+            order.status = 'pending'
+            order.attempts = 0
+          }
+        }
+      }
+      queueManager.saveQueue()
+      const primaryBot = getPrimaryDeliveryBot()
+      if (!primaryBot || !primaryBot.entity) {
+        stopBot = false
+        connectBot()
+      }
+      queueManager.processNext()
+      return sendJson(res, 200, { ok: true, message: 'Delivery started for active orders', queue: queueManager.queue })
     }
 
     // Minecraft Bot Controls

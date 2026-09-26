@@ -434,10 +434,11 @@
                 </td>
                 <td class="py-3 pl-3 text-right space-x-1">
                   ${o.status !== 'completed' ? `
-                    <button onclick="retryOrder('${o.orderId}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[10px] uppercase cursor-pointer">Retry</button>
-                    <button onclick="completeOrder('${o.orderId}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] uppercase cursor-pointer">Done</button>
+                    <button onclick="window.bluxOrderAction('${o.orderId || o.id}', 'start')" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[10px] uppercase cursor-pointer">Start Delivery</button>
+                    <button onclick="retryOrder('${o.orderId || o.id}')" class="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[10px] uppercase cursor-pointer">Retry</button>
+                    <button onclick="completeOrder('${o.orderId || o.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold text-[10px] uppercase cursor-pointer">Done</button>
                   ` : ''}
-                  <button onclick="deleteOrder('${o.orderId}')" class="px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 text-[10px] font-bold cursor-pointer">✕</button>
+                  <button onclick="deleteOrder('${o.orderId || o.id}')" class="px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 text-[10px] font-bold cursor-pointer">✕</button>
                 </td>
               </tr>
             `;
@@ -473,19 +474,44 @@
       fetchStatus();
     }
 
+    window.bluxOrderAction = async function(id, action) {
+      try {
+        await apiCall('/api/order/action', 'POST', { id, action });
+        fetchStatus();
+      } catch (err) {
+        console.error('Order action error:', err);
+      }
+    };
+
+    async function startOrder(orderId) {
+      await window.bluxOrderAction(orderId, 'start');
+    }
+
     async function retryOrder(orderId) {
-      await apiCall('/api/dashboard/retry', 'POST', { orderId });
-      fetchStatus();
+      if (window.bluxOrderAction) {
+        await window.bluxOrderAction(orderId, 'retry');
+      } else {
+        await apiCall('/api/dashboard/retry', 'POST', { orderId });
+        fetchStatus();
+      }
     }
 
     async function completeOrder(orderId) {
-      await apiCall('/api/dashboard/complete', 'POST', { orderId });
-      fetchStatus();
+      if (window.bluxOrderAction) {
+        await window.bluxOrderAction(orderId, 'complete');
+      } else {
+        await apiCall('/api/dashboard/complete', 'POST', { orderId });
+        fetchStatus();
+      }
     }
 
     async function deleteOrder(orderId) {
-      await apiCall('/api/dashboard/delete', 'POST', { orderId });
-      fetchStatus();
+      if (window.bluxOrderAction) {
+        await window.bluxOrderAction(orderId, 'delete');
+      } else {
+        await apiCall('/api/dashboard/delete', 'POST', { orderId });
+        fetchStatus();
+      }
     }
 
     async function triggerCloudSync() {
