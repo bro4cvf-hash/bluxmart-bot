@@ -37,7 +37,9 @@ function createMockBot(opts = {}) {
     _client: { username: opts.username || 'TrafficerBot' },
     username: opts.username || 'TrafficerBot',
     entity: {
-      position: pos
+      position: pos,
+      yaw: 0,
+      pitch: 0
     },
     players: opts.players !== undefined ? opts.players : {
       TestPlayer: {
@@ -92,7 +94,9 @@ function createMockBot(opts = {}) {
         this.entity.position = (opts.initialPos || new Vec3(0, 64, 0)).clone()
       }
     },
-    lookAt: async () => {},
+    lookAt: async (point, force) => {},
+    look: async (yaw, pitch, force) => {},
+    setControlState: (control, state) => {},
     toss: async (type, metadata, count) => {
       tossedItems.push({ type, count })
       if (opts.throwOnToss) {
@@ -100,7 +104,7 @@ function createMockBot(opts = {}) {
       }
     },
     findBlock: () => ({ position: new Vec3(1, 64, 1), name: 'ender_chest' }),
-    openContainer: async () => ({
+    openContainer: async (block, direction, cursorPos) => ({
       containerItems: () => opts.containerItems || [
         { name: 'spawner', type: 52, count: 64 },
         { name: 'elytra', type: 443, count: 1 }

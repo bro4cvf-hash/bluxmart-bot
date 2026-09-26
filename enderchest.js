@@ -319,6 +319,83 @@ export async function findOrPlaceEnderChest(bot) {
   throw new Error('Could not find a suitable block surface with clear lid space to place the physical Ender Chest.')
 }
 
+export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
+  if (!bot || !ecBlock) throw new Error('Bot or Ender Chest block missing')
+
+  if (bot.currentWindow) {
+    try { bot.closeWindow(bot.currentWindow) } catch {}
+    await delay(200)
+  }
+
+  const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
+
+  // 1. Move within comfortable reach (<= 2.5m) if needed
+  if (bot.entity?.position) {
+    const dist = bot.entity.position.distanceTo(chestCenter)
+    if (dist > 2.5 && typeof bot.setControlState === 'function') {
+      if (typeof bot.lookAt === 'function') {
+        await bot.lookAt(chestCenter, true)
+      }
+      bot.setControlState('forward', true)
+      await delay(Math.min(400, Math.floor((dist - 2.0) * 200)))
+      bot.setControlState('forward', false)
+      await delay(150)
+    }
+  }
+
+  // 2. Determine best face to click based on bot's relative position
+  let faceVec = new Vec3(0, 1, 0)
+  if (bot.entity?.position) {
+    const diff = bot.entity.position.minus(chestCenter)
+    if (Math.abs(diff.x) > Math.abs(diff.z)) {
+      faceVec = diff.x > 0 ? new Vec3(1, 0, 0) : new Vec3(-1, 0, 0)
+    } else {
+      faceVec = diff.z > 0 ? new Vec3(0, 0, 1) : new Vec3(0, 0, -1)
+    }
+  }
+
+  const faceTarget = chestCenter.plus(faceVec.scaled(0.45))
+
+  // 3. Look directly at the chest face (forced) and wait for rotation sync
+  if (typeof bot.lookAt === 'function') {
+    await bot.lookAt(faceTarget, true)
+    await delay(250)
+  }
+
+  // 4. Try opening via facing side, top face, or fallback
+  const attemptOpen = async (dir) => {
+    return Promise.race([
+      bot.openContainer(ecBlock, dir, new Vec3(0.5, 0.5, 0.5)),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Container open timed out')), Math.floor(timeoutMs / 2))
+      )
+    ])
+  }
+
+  try {
+    return await attemptOpen(faceVec)
+  } catch (err1) {
+    if (typeof bot.lookAt === 'function') {
+      await bot.lookAt(chestCenter.offset(0, 0.45, 0), true)
+      await delay(200)
+    }
+    try {
+      return await attemptOpen(new Vec3(0, 1, 0))
+    } catch (err2) {
+      if (typeof bot.lookAt === 'function') {
+        await bot.lookAt(chestCenter, true)
+        await delay(150)
+      }
+      return await Promise.race([
+        bot.openContainer(ecBlock),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Timed out waiting for Ender Chest container window to open (${Math.round(timeoutMs / 1000)}s)`)), Math.floor(timeoutMs / 2))
+        )
+      ])
+    }
+  }
+}
+
 /**
  * Opens the physical Ender Chest at the bot's safe base and withdraws the exact required
  * counts of spawners and elytras into the bot's main inventory.
@@ -360,15 +437,7 @@ export async function withdrawFromEnderChest(bot, needed) {
   }
 
   const ecBlock = await findOrPlaceEnderChest(bot)
-  const targetPoint = await acquireEnderChestTarget(bot, ecBlock)
-  await smoothLookAt(bot, targetPoint)
-  await delay(120 + Math.floor(Math.random() * 80))
-  const container = await Promise.race([
-    bot.openContainer(ecBlock),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timed out waiting for Ender Chest container window to open (7s)')), 7000)
-    )
-  ])
+  const container = await openEnderChestSafely(bot, ecBlock, 8000)
 
   try {
     await delay(350)
@@ -445,15 +514,7 @@ export async function depositBackToEnderChest(bot) {
   if (spawnersInInv === 0 && elytrasInInv === 0) return
 
   const ecBlock = await findOrPlaceEnderChest(bot)
-  const targetPoint = await acquireEnderChestTarget(bot, ecBlock)
-  await smoothLookAt(bot, targetPoint)
-  await delay(120 + Math.floor(Math.random() * 80))
-  const container = await Promise.race([
-    bot.openContainer(ecBlock),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timed out waiting for Ender Chest container window to open (7s)')), 7000)
-    )
-  ])
+  const container = await openEnderChestSafely(bot, ecBlock, 8000)
 
   try {
     await delay(300)

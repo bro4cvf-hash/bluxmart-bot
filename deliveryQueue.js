@@ -184,7 +184,12 @@ export class DeliveryQueueManager {
         item.lastError = 'Recovered from bot restart during delivery'
         needsSave = true
       }
-      if (item.status === 'failed' && item.lastError && String(item.lastError).includes('lid obstructed')) {
+      if ((item.status === 'failed' || item.status === 'waiting_for_player') &&
+          item.lastError &&
+          (String(item.lastError).includes('lid obstructed') ||
+           String(item.lastError).includes('Timed out waiting for Ender Chest') ||
+           String(item.lastError).includes('Ender Chest container window') ||
+           String(item.lastError).includes('Ender Chest error'))) {
         item.status = 'pending'
         item.attempts = 0
         item.lastError = null
@@ -666,7 +671,7 @@ export class DeliveryQueueManager {
       // Step 2c: Withdraw exact items ordered from Ender Chest
       if (order.spawners > 0 || order.elytras > 0) {
         this.log(
-          `[DELIVERY] [${order.orderId}] Step 2c: Withdrawing ${order.spawners || 0}x Spawner, ${order.elytras || 0}x Elytra from Ender Chest...`
+          `[DELIVERY] [${order.orderId}] Step 2c: Looking at Ender Chest and withdrawing ${order.spawners || 0}x Spawner, ${order.elytras || 0}x Elytra...`
         )
         try {
           await withdrawFromEnderChest(bot, {
