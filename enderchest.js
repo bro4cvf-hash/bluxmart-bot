@@ -272,6 +272,14 @@ export async function findOrPlaceEnderChest(bot) {
     maxDistance: 4.5
   })
 
+  if (!ecBlock) {
+    await delay(400)
+    ecBlock = bot.findBlock({
+      matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+      maxDistance: 4.5
+    })
+  }
+
   if (ecBlock) return ecBlock
 
   // Check if bot holds an ender_chest item to place
@@ -286,7 +294,7 @@ export async function findOrPlaceEnderChest(bot) {
         `Ender Chest at ${blockedChest.position} cannot be opened (lid obstructed), and bot has no spare Ender Chest.`
       )
     }
-    throw new Error('No physical ender_chest block found within 4.5 blocks and none in bot inventory.')
+    throw new Error('No physical ender_chest block found within 4.5 blocks at base and none in bot inventory to place.')
   }
 
   // Find a solid reference block near the bot's feet to place the Ender Chest on
@@ -336,8 +344,12 @@ export async function withdrawFromEnderChest(bot, needed) {
     try { bot.closeWindow(bot.currentWindow) } catch {}
     await delay(200)
   }
-  const targetSpawners = Math.max(0, Number(needed.spawners) || 0)
-  const targetElytras = Math.max(0, Number(needed.elytras) || 0)
+  const targetSpawners = Math.max(0, Number(needed?.spawners) || 0)
+  const targetElytras = Math.max(0, Number(needed?.elytras) || 0)
+  const required = {
+    spawners: targetSpawners,
+    elytras: targetElytras
+  }
 
   const currentSpawners = countInventoryCategory(bot, 'spawner')
   const currentElytras = countInventoryCategory(bot, 'elytra')
@@ -363,10 +375,24 @@ export async function withdrawFromEnderChest(bot, needed) {
   const targetPoint = await acquireEnderChestTarget(bot, ecBlock)
   await smoothLookAt(bot, targetPoint)
   await delay(120 + Math.floor(Math.random() * 80))
-  const container = await bot.openContainer(ecBlock)
+  const container = await Promise.race([
+    bot.openContainer(ecBlock),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timed out waiting for Ender Chest container window to open (7s)')), 7000)
+    )
+  ])
 
   try {
     await delay(350)
+
+    const spawnersAvailable = container
+      .containerItems()
+      .filter((item) => matchesCatalogCategory(item.name, 'spawner'))
+      .reduce((sum, item) => sum + item.count, 0)
+    const elytrasAvailable = container
+      .containerItems()
+      .filter((item) => matchesCatalogCategory(item.name, 'elytra'))
+      .reduce((sum, item) => sum + item.count, 0)
 
     let remainingSpawnersToPull = missingSpawners
     let remainingElytrasToPull = missingElytras
@@ -395,16 +421,9 @@ export async function withdrawFromEnderChest(bot, needed) {
         }
       }
 
-      if (remainingSpawnersToPull > 0) {
-        throw new Error(
-          `Insufficient Spawners in Ender Chest! Needed ${missingSpawners} more, still short by ${remainingSpawnersToPull}.`
-        )
-      }
-      if (remainingElytrasToPull > 0) {
-        throw new Error(
-          `Insufficient Elytras in Ender Chest! Needed ${missingElytras} more, still short by ${remainingElytrasToPull}.`
-        )
-      }
+      throw new Error(
+        `Insufficient physical items in Ender Chest: order requires ${required.spawners} Spawner, ${required.elytras} Elytra; Ender Chest only has ${spawnersAvailable} Spawner, ${elytrasAvailable} Elytra.`
+      )
     }
   } finally {
     try {
@@ -441,7 +460,12 @@ export async function depositBackToEnderChest(bot) {
   const targetPoint = await acquireEnderChestTarget(bot, ecBlock)
   await smoothLookAt(bot, targetPoint)
   await delay(120 + Math.floor(Math.random() * 80))
-  const container = await bot.openContainer(ecBlock)
+  const container = await Promise.race([
+    bot.openContainer(ecBlock),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timed out waiting for Ender Chest container window to open (7s)')), 7000)
+    )
+  ])
 
   try {
     await delay(300)

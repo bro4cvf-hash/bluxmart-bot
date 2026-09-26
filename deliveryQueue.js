@@ -12,7 +12,7 @@ const DEFAULT_QUEUE_FILE = path.resolve('./delivery-queue.json')
 const FALLBACK_QUEUE_FILE = path.resolve('./orders-queue.json')
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function safeChat(bot, msg) {
+export function safeChat(bot, msg) {
   if (!bot || typeof bot.chat !== 'function') return
   const clean = String(msg ?? '')
     .replace(/[\r\n\0]/g, ' ')
@@ -30,34 +30,35 @@ function safeChat(bot, msg) {
  */
 export async function isPlayerOnline(bot, username, timeoutMs = 3500) {
   if (!bot || !username) return false
-  const target = String(username).trim().toLowerCase()
+  const target = String(username || '').trim().toLowerCase()
   if (!target) return false
 
-  // If bot supports tabComplete (real Mineflayer instance or capable mock)
+  // Step A: Instant check via bot.players
+  const directPlayers = new Set(Object.keys(bot?.players || {}).map((p) => p.toLowerCase()))
+  if (directPlayers.has(target)) return true
+
+  // Step B: Tab completion check
   if (typeof bot.tabComplete === 'function') {
     try {
-      // Query prefix: all letters except last one (or full username if 1 letter)
       const prefix = target.length > 1 ? target.slice(0, -1) : target
       const tabQuery = `/tpa ${prefix}`
       const matches = await bot.tabComplete(tabQuery, false, false, timeoutMs)
       if (Array.isArray(matches) && matches.length > 0) {
-        return matches.some((item) => {
-          const name = typeof item === 'string' ? item : (item.match || item.name || '')
-          const clean = String(name).trim().replace(/^[/]/, '').toLowerCase()
-          return clean === target
+        const found = matches.some((item) => {
+          const raw = typeof item === 'string' ? item : (item.match || item.name || '')
+          const parts = String(raw).trim().split(/\s+/)
+          const candidate = parts[parts.length - 1].replace(/^[/]/, '').toLowerCase()
+          return candidate === target
         })
+        if (found) return true
       }
-      return false
-    } catch {
-      return false
+    } catch (err) {
+      // Tab completion timed out or rejected
     }
   }
 
-  // Fallback for mock environments without tabComplete
-  const onlinePlayers = new Set(
-    Object.keys(bot?.players || {}).map((p) => p.toLowerCase())
-  )
-  return onlinePlayers.has(target)
+  // Step C: Final fallback check via bot.players in case tab list updated
+  return new Set(Object.keys(bot?.players || {}).map((p) => p.toLowerCase())).has(target)
 }
 
 export class DeliveryQueueManager {
@@ -515,7 +516,9 @@ export class DeliveryQueueManager {
     }
   }
 
-  async executeOrder(bot, order) {
+  async executeOrder(botOrOrder, maybeOrder) {
+    const bot = maybeOrder !== undefined ? botOrOrder : this.getBot()
+    const order = maybeOrder !== undefined ? maybeOrder : botOrOrder
     const username = String(order.minecraftUsername || order.recipient || '').trim()
     if (!/^\.?[a-zA-Z0-9_]{3,16}$/.test(username)) {
       order.status = 'failed'
@@ -608,6 +611,7 @@ export class DeliveryQueueManager {
       }
 
       // Pre-flight Online Check: Confirm buyer is online via tab complete right before physical handling
+      this.log(`[DELIVERY] [${order.orderId}] Step 1: Checking buyer ${username} online status...`)
       const isOnline = await isPlayerOnline(bot, username)
       if (!isOnline) {
         order.status = 'waiting_for_player'
@@ -615,7 +619,7 @@ export class DeliveryQueueManager {
         order.nextAttemptAt = Date.now() + 15000
         order.updatedAt = Date.now()
         this.saveQueue()
-        this.log(`[DELIVERY] Deferring Order #${order.orderId}: ${username} is offline.`, 'warn')
+        this.log(`[DELIVERY] [${order.orderId}] Buyer ${username} is offline on server. Deferring to waiting_for_player.`)
         return
       }
 
@@ -625,21 +629,29 @@ export class DeliveryQueueManager {
       this.saveQueue()
       await this.notifyUpdate(order)
 
+      this.log(`[DELIVERY] [${order.orderId}] Step 2: Preparing base & Ender Chest...`)
+
       // Step 2a: Ensure any open window is closed and return to base only if not near Ender Chest
       if (bot.currentWindow) {
         try { bot.closeWindow(bot.currentWindow) } catch {}
         await delay(200)
       }
-      const nearbyEC = bot.findBlock ? bot.findBlock({
+      let nearbyEC = bot.findBlock ? bot.findBlock({
         matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
         maxDistance: 4.5
       }) : null
       if (!nearbyEC) {
         await this.returnToBaseSafely(bot, null, 4000)
+        await delay(300)
+        nearbyEC = bot.findBlock ? bot.findBlock({
+          matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+          maxDistance: 4.5
+        }) : null
       }
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
 
       // Step 2b: Ensure bot inventory starts clean (deposit any leftover spawners/elytras into Ender Chest)
+      this.log(`[DELIVERY] [${order.orderId}] Step 2b: Clearing stray inventory into Ender Chest...`)
       if (order.spawners > 0 || order.elytras > 0) {
         await depositBackToEnderChest(bot)
       }
@@ -647,14 +659,20 @@ export class DeliveryQueueManager {
       // Step 2c: Withdraw exact items ordered from Ender Chest
       if (order.spawners > 0 || order.elytras > 0) {
         this.log(
-          `[DELIVERY] Withdrawing ${order.spawners}x Spawner and ${order.elytras}x Elytra from Ender Chest...`
+          `[DELIVERY] [${order.orderId}] Step 2c: Withdrawing ${order.spawners || 0}x Spawner, ${order.elytras || 0}x Elytra from Ender Chest...`
         )
-        await withdrawFromEnderChest(bot, {
-          spawners: order.spawners,
-          elytras: order.elytras
-        })
+        try {
+          await withdrawFromEnderChest(bot, {
+            spawners: order.spawners,
+            elytras: order.elytras
+          })
+        } catch (err) {
+          order.lastError = err.message
+          this.log(`[DELIVERY] [${order.orderId}] Ender Chest error: ${err.message}`)
+          throw err
+        }
       }
-      // Step 2c: Send /tpa <username> and listen for immediate offline feedback
+      // Step 2d: Send /tpa <username> and listen for immediate offline feedback
       let offlineChatDetected = null
       const offlineKeywords = [
         'not online',
@@ -680,7 +698,7 @@ export class DeliveryQueueManager {
 
       let tpResult
       try {
-        this.log(`[DELIVERY] Sending /tpa ${username}...`)
+        this.log(`[DELIVERY] [${order.orderId}] Step 2d: Sending /tpa ${username}...`)
         safeChat(bot, `/tpa ${username}`)
         await delay(600)
         if (!offlineChatDetected) {
@@ -690,7 +708,7 @@ export class DeliveryQueueManager {
           )
         }
 
-        // Step 2d: Wait for teleport completion
+        // Wait for teleport completion
         tpResult = await this.waitForTeleport(
           bot,
           username,
@@ -707,6 +725,11 @@ export class DeliveryQueueManager {
       }
       if (!tpResult || !tpResult.success) {
         const isOfflineChat = tpResult?.reason === 'offline_chat'
+        if (isOfflineChat) {
+          this.log(
+            `[DELIVERY] [${order.orderId}] Server chat confirmed buyer offline: "${offlineChatDetected}". Canceling TPA.`
+          )
+        }
         const errorReason = isOfflineChat
           ? `Buyer is offline (chat: "${tpResult.message}")`
           : (tpResult?.reason === 'timeout' ? 'Waiting for buyer to accept /tpa' : '/tpa failed')

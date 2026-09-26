@@ -149,8 +149,11 @@ function handleSSEEvent(channel, args) {
     appendTerminalLine(terminal, `[Error] ${args.join(' ')}`, 'error');
     appendTerminalLine(overviewTerm, `[Error] ${args.join(' ')}`, 'error');
   } else if (channel === 'delivery_status') {
-    appendTerminalLine(terminal, `[Order] ${args.join(' ')}`, 'success');
-    appendTerminalLine(overviewTerm, `[Order] ${args.join(' ')}`, 'success');
+    const [orderId, recipient, status, err] = args;
+    const type = status === 'failed' ? 'error' : (status === 'completed' ? 'success' : 'info');
+    const msg = `[Order] ${orderId} (${recipient}) ${status}${err ? `: ${err}` : ''}`;
+    appendTerminalLine(terminal, msg, type);
+    appendTerminalLine(overviewTerm, msg, type);
     loadStatus();
   } else if (channel === 'botEvent') {
     const info = args[0] || {};
@@ -416,7 +419,7 @@ function renderDeliveryQueue() {
       <td>${esc(formatOrderItems(o))}</td>
       <td>
         ${statusBadgeHtml(o.status)}
-        ${o.error ? `<div class="hint" style="color:var(--danger)">${esc(o.error)}</div>` : ''}
+        ${(o.lastError || o.error) ? `<div class="hint" style="color:var(--danger)">${esc(o.lastError || o.error)}</div>` : ''}
       </td>
       <td class="mono">${o.createdAt ? new Date(o.createdAt).toLocaleTimeString() : '—'}</td>
       <td>

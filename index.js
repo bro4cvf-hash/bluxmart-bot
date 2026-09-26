@@ -26,7 +26,7 @@ import {
 } from './js/misc/utils.js'
 import { easyMcAuth } from './js/misc/customAuth.js'
 import { antiafk } from './js/misc/antiafk.js'
-import { DeliveryQueueManager } from './deliveryQueue.js'
+import { DeliveryQueueManager, safeChat } from './deliveryQueue.js'
 
 const require = createRequire(import.meta.url)
 const __filename = fileURLToPath(import.meta.url)
@@ -987,6 +987,22 @@ function newBot(options) {
   })
   bot.on('messagestr', (msg) => {
     sendEvent(bot._client.username, 'chat', msg)
+    if (!msg) return
+    const cleanMsg = String(msg).replace(/[\r\n\0]/g, ' ').trim()
+    const claimMatch = cleanMsg.match(/(?:from|\->|whispers:?)\s*(\.?[a-zA-Z0-9_]{3,16}).*claim/i) ||
+      (cleanMsg.toLowerCase().includes('claim') ? cleanMsg.match(/(?:from|\->)\s*(\.?[a-zA-Z0-9_]{3,16})/i) : null)
+    if (claimMatch && claimMatch[1]) {
+      let sender = claimMatch[1]
+      if (sender.toLowerCase() === 'me' || sender.toLowerCase() === 'you') {
+        const revMatch = cleanMsg.match(/\[?\s*(\.?[a-zA-Z0-9_]{3,16})\s*->\s*(?:me|you)/i)
+        if (revMatch && revMatch[1]) sender = revMatch[1]
+      }
+      if (sender && !['me', 'you', bot._client?.username?.toLowerCase()].includes(sender.toLowerCase())) {
+        queueManager.retryPendingForPlayer(sender)
+        sendEvent(bot._client.username, 'chat', `[Bluxmart] Claim whisper detected from ${sender}! Re-queueing pending orders...`)
+        safeChat(bot, `/msg ${sender} [Bluxmart] Claim received! Retrying your order delivery now...`)
+      }
+    }
   })
   bot.on('playerJoined', (player) => {
     if (player && player.username) {
@@ -1332,12 +1348,20 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
   queueFilePath: path.resolve(process.cwd(), './delivery-queue.json'),
   safetyRadius: Number(process.env.SAFETY_RADIUS_BLOCKS || 5),
   tpaTimeoutMs: Number(process.env.TPA_WAIT_TIMEOUT_MS || 45000),
+  onLog: (msg, level = 'info') => {
+    console.log(`[QueueManager:${level.toUpperCase()}] ${msg}`)
+    const primaryBot = getPrimaryDeliveryBot()
+    const botName = primaryBot?._client?.username || 'Bluxmart'
+    sendEvent(botName, 'chat', msg)
+  },
   onStatusChange: async (order) => {
     const botName = getPrimaryDeliveryBot()?._client?.username || 'Bluxmart'
     const orderId = order.id || order.orderId
     const recipient = order.recipient || order.minecraftUsername
-    sendEvent(botName, 'chat', `[Bluxmart] Order ${orderId} (${recipient}) -> ${(order.status || '').toUpperCase()}`)
-    broadcastToRenderer('delivery_status', orderId, recipient, order.status)
+    const status = (order.status || '').toUpperCase()
+    const errInfo = order.lastError ? ` - ${order.lastError}` : ''
+    sendEvent(botName, 'chat', `[Bluxmart] Order ${orderId} (${recipient}) -> ${status}${errInfo}`)
+    broadcastToRenderer('delivery_status', orderId, recipient, order.status, order.lastError || null)
     await reportStatusToBluxmart(order)
     await notifyDiscordOrder(order)
   }
