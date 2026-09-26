@@ -4,7 +4,8 @@ import { checkAreaSafety } from './safety.js'
 import {
   withdrawFromEnderChest,
   depositBackToEnderChest,
-  matchesCatalogCategory
+  matchesCatalogCategory,
+  isChestLidBlocked
 } from './enderchest.js'
 
 const DEFAULT_QUEUE_FILE = path.resolve('./delivery-queue.json')
@@ -348,9 +349,36 @@ export class DeliveryQueueManager {
    * Fixes EC-06 (Teleport Warmup Race on Abort).
    */
   async returnToBaseSafely(bot, basePos, timeoutMs = 6000) {
+    if (basePos && bot.entity && bot.entity.position.distanceTo(basePos) <= 4) {
+      if (bot.currentWindow) {
+        try { bot.closeWindow(bot.currentWindow) } catch {}
+      }
+      return true
+    }
+
     safeChat(bot, this.safeReturnCommand || '/home 1')
+    await delay(600)
+
+    // On DonutSMP, if sending return command opened a window (e.g. "Homes" GUI):
+    if (bot.currentWindow) {
+      const win = bot.currentWindow
+      const title = String(win.title || '').toLowerCase()
+      if (title.includes('home')) {
+        const homeSlot = win.slots ? win.slots.findIndex((s, idx) => s && s.name && idx < (win.inventoryStart || 27)) : -1
+        if (homeSlot !== -1 && typeof bot.clickWindow === 'function') {
+          try {
+            await bot.clickWindow(homeSlot, 0, 0)
+            await delay(1200)
+          } catch {}
+        }
+      }
+      if (bot.currentWindow) {
+        try { bot.closeWindow(bot.currentWindow) } catch {}
+      }
+    }
+
     if (!basePos || !bot.entity) {
-      await delay(2500)
+      await delay(2000)
       return true
     }
 
@@ -595,8 +623,18 @@ export class DeliveryQueueManager {
       this.saveQueue()
       await this.notifyUpdate(order)
 
-      // Step 2a: Return to base FIRST before capturing startBasePos
-      await this.returnToBaseSafely(bot, null, 4000)
+      // Step 2a: Ensure any open window is closed and return to base only if not near Ender Chest
+      if (bot.currentWindow) {
+        try { bot.closeWindow(bot.currentWindow) } catch {}
+        await delay(200)
+      }
+      const nearbyEC = bot.findBlock ? bot.findBlock({
+        matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+        maxDistance: 4.5
+      }) : null
+      if (!nearbyEC) {
+        await this.returnToBaseSafely(bot, null, 4000)
+      }
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
 
       // Step 2b: Ensure bot inventory starts clean (deposit any leftover spawners/elytras into Ender Chest)
@@ -688,7 +726,8 @@ export class DeliveryQueueManager {
         const reachedMax = order.attempts >= this.maxRetries
         order.status = reachedMax ? 'failed' : 'waiting_for_player'
         order.lastError = reachedMax ? `Exceeded max delivery attempts (${this.maxRetries})` : errorReason
-        order.nextAttemptAt = Date.now() + (isOfflineChat ? 15000 : 20000)
+        // On timeout, wait for buyer to whisper "claim" rather than auto-spamming /tpa
+        order.nextAttemptAt = Date.now() + (isOfflineChat ? 15000 : 86400000)
         order.updatedAt = Date.now()
         this.saveQueue()
         const msg = reachedMax
