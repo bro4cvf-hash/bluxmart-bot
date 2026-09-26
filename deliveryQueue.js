@@ -319,8 +319,7 @@ export class DeliveryQueueManager {
       (o) =>
         (((o.minecraftUsername && o.minecraftUsername.toLowerCase() === lower) ||
           (o.recipient && o.recipient.toLowerCase() === lower))) &&
-        o.status !== 'completed' &&
-        o.status !== 'waiting_for_staff'
+        (o.status === 'waiting_for_player' || o.status === 'failed')
     )
     if (targets.length > 0) {
       for (const target of targets) {
@@ -361,50 +360,78 @@ export class DeliveryQueueManager {
    * Waits for the bot to actually arrive back at base coordinates after sending safe return command (/home 1).
    * Fixes EC-06 (Teleport Warmup Race on Abort).
    */
-  async returnToBaseSafely(bot, basePos, timeoutMs = 6000) {
+  async returnToBaseSafely(bot, basePos, timeoutMs = 8000) {
+    if (typeof bot.clearControlStates === 'function') {
+      bot.clearControlStates()
+    }
+
     if (basePos && bot.entity && bot.entity.position.distanceTo(basePos) <= 4) {
       if (bot.currentWindow) {
         try { bot.closeWindow(bot.currentWindow) } catch {}
       }
+      this.log('[DELIVERY] Successfully returned to /home 1.')
       return true
     }
 
-    let cmd = String(this.safeReturnCommand || '/home 1').trim()
-    if (cmd === '/home') cmd = '/home 1'
-    safeChat(bot, cmd)
-    await delay(600)
-
-    // On DonutSMP, if sending return command opened a window (e.g. "Homes" GUI):
-    if (bot.currentWindow) {
-      const win = bot.currentWindow
-      const title = String(win.title || '').toLowerCase()
-      if (title.includes('home')) {
-        const homeSlot = win.slots ? win.slots.findIndex((s, idx) => s && s.name && idx < (win.inventoryStart || 27)) : -1
-        if (homeSlot !== -1 && typeof bot.clickWindow === 'function') {
-          try {
-            await bot.clickWindow(homeSlot, 0, 0)
-            await delay(1200)
-          } catch {}
+    const handleHomesGui = async () => {
+      if (bot.currentWindow) {
+        const win = bot.currentWindow
+        const title = String(win.title || '').toLowerCase()
+        if (title.includes('home')) {
+          const homeSlot = win.slots ? win.slots.findIndex((s, idx) => s && s.name && idx < (win.inventoryStart || 27)) : -1
+          if (homeSlot !== -1 && typeof bot.clickWindow === 'function') {
+            try {
+              await bot.clickWindow(homeSlot, 0, 0)
+              await delay(1200)
+            } catch {}
+          }
+        }
+        if (bot.currentWindow) {
+          try { bot.closeWindow(bot.currentWindow) } catch {}
         }
       }
-      if (bot.currentWindow) {
-        try { bot.closeWindow(bot.currentWindow) } catch {}
-      }
     }
+
+    this.log('[DELIVERY] Executing /home 1 to return to base...')
+    safeChat(bot, '/home 1')
+    await delay(600)
+    await handleHomesGui()
 
     if (!basePos || !bot.entity) {
       await delay(2000)
+      this.log('[DELIVERY] Successfully returned to /home 1.')
       return true
     }
 
+    const startPos = bot.entity.position ? bot.entity.position.clone() : null
     const start = Date.now()
+    let retried = false
+
     while (Date.now() - start < timeoutMs) {
       await delay(400)
       if (!bot.entity) break
       if (bot.entity.position.distanceTo(basePos) <= 8) {
+        this.log('[DELIVERY] Successfully returned to /home 1.')
         return true
       }
+
+      // Retry sending /home 1 once if halfway through timeout and position hasn't changed
+      if (!retried && Date.now() - start >= timeoutMs / 2) {
+        if (startPos && bot.entity.position.distanceTo(startPos) < 2) {
+          retried = true
+          this.log('[DELIVERY] Position unchanged halfway through timeout, retrying /home 1...')
+          safeChat(bot, '/home 1')
+          await delay(600)
+          await handleHomesGui()
+        }
+      }
     }
+
+    if (bot.entity && bot.entity.position.distanceTo(basePos) <= 8) {
+      this.log('[DELIVERY] Successfully returned to /home 1.')
+      return true
+    }
+
     return false
   }
 
@@ -859,10 +886,10 @@ export class DeliveryQueueManager {
       this.saveQueue()
 
       this.log(
-        `[DELIVERY] ✅ Order #${order.orderId} successfully delivered to ${username}! Returning home...`,
+        `[DELIVERY] ✅ Order #${order.orderId} successfully delivered to ${username}! Returning home via /home 1...`,
         'success'
       )
-      await this.returnToBaseSafely(bot, startBasePos, 5000)
+      await this.returnToBaseSafely(bot, startBasePos, 8000)
       safeChat(
         bot,
         `/msg ${username} [Bluxmart] Order #${order.orderId} delivered! Thank you for buying from bluxmart.com!`

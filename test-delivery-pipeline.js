@@ -97,6 +97,7 @@ function createMockBot(opts = {}) {
     lookAt: async (point, force) => {},
     look: async (yaw, pitch, force) => {},
     setControlState: (control, state) => {},
+    clearControlStates: () => {},
     toss: async (type, metadata, count) => {
       tossedItems.push({ type, count })
       if (opts.throwOnToss) {
