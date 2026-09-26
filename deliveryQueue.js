@@ -22,6 +22,43 @@ function safeChat(bot, msg) {
   }
 }
 
+/**
+ * Checks if a player is online using tab completion on '/tpa <prefix>'.
+ * Prefix consists of all letters of the username except the last one.
+ * Verifies that the tab completion suggestions contain the exact case-insensitive username.
+ */
+export async function isPlayerOnline(bot, username, timeoutMs = 3500) {
+  if (!bot || !username) return false
+  const target = String(username).trim().toLowerCase()
+  if (!target) return false
+
+  // If bot supports tabComplete (real Mineflayer instance or capable mock)
+  if (typeof bot.tabComplete === 'function') {
+    try {
+      // Query prefix: all letters except last one (or full username if 1 letter)
+      const prefix = target.length > 1 ? target.slice(0, -1) : target
+      const tabQuery = `/tpa ${prefix}`
+      const matches = await bot.tabComplete(tabQuery, false, false, timeoutMs)
+      if (Array.isArray(matches) && matches.length > 0) {
+        return matches.some((item) => {
+          const name = typeof item === 'string' ? item : (item.match || item.name || '')
+          const clean = String(name).trim().replace(/^[/]/, '').toLowerCase()
+          return clean === target
+        })
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  // Fallback for mock environments without tabComplete
+  const onlinePlayers = new Set(
+    Object.keys(bot?.players || {}).map((p) => p.toLowerCase())
+  )
+  return onlinePlayers.has(target)
+}
+
 export class DeliveryQueueManager {
   constructor(botGetter, config = {}) {
     this.getBot = botGetter
@@ -336,107 +373,115 @@ export class DeliveryQueueManager {
    * 3. Zombie state guard: try/catch/finally guarantees status reset on any exception.
    */
   async processNext() {
-    if (this.processing) return
+    if (this.processing) {
+      this.pendingRerun = true
+      return
+    }
     const bot = this.getBot()
     if (!bot || !bot.entity) return
 
-    const now = Date.now()
-    const onlinePlayers = new Set(
-      Object.keys(bot?.players || {}).map((p) => p.toLowerCase())
-    )
-
-    // Priority 1: Any order that still needs Money sent (works offline & online)
-    let nextOrder = this.queue.find(
-      (o) =>
-        o.status !== 'completed' &&
-        o.status !== 'failed' &&
-        !o.moneyDelivered &&
-        (o.moneyAmount > 0 || o.money > 0) &&
-        (o.nextAttemptAt || 0) <= now
-    )
-
-    // Priority 2: Physical items for ONLINE buyers whose backoff timer has elapsed
-    if (!nextOrder) {
-      nextOrder = this.queue.find((o) => {
-        if (o.status === 'completed' || o.status === 'failed' || o.status === 'waiting_for_staff') return false
-        if (o.itemsDelivered || !o.hasNonMoneyItems) return false
-        if (o.attempts >= this.maxRetries) return false
-        if ((o.nextAttemptAt || 0) > now) return false
-
-        // Allow unsupported custom item orders (spawners === 0 && elytras === 0 && otherItemsCount > 0) to transition immediately to waiting_for_staff
-        if (o.otherItemsCount > 0 && o.spawners === 0 && o.elytras === 0) return true
-
-        const user = (o.minecraftUsername || o.recipient || '').toLowerCase()
-        return onlinePlayers.has(user)
-      })
-    }
-
-    // Priority 3: If no online physical orders, check if any pending orders need offline marking
-    if (!nextOrder) {
-      const pendingOfflineOrder = this.queue.find((o) => {
-        if (o.status !== 'pending' && o.status !== 'queued') return false
-        if (o.itemsDelivered || !o.hasNonMoneyItems) return false
-        const user = (o.minecraftUsername || o.recipient || '').toLowerCase()
-        return !onlinePlayers.has(user)
-      })
-
-      if (pendingOfflineOrder) {
-        // Transition offline order to waiting_for_player immediately without blocking queue!
-        pendingOfflineOrder.status = 'waiting_for_player'
-        pendingOfflineOrder.lastError = 'Buyer is offline (must be in-game on donutsmp.net)'
-        pendingOfflineOrder.nextAttemptAt = now + 15000 // Re-check in 15 seconds
-        pendingOfflineOrder.updatedAt = now
-        this.saveQueue()
-        this.notifyUpdate(pendingOfflineOrder, {
-          chatMessage: `⏳ Order #${pendingOfflineOrder.orderId} for ${pendingOfflineOrder.minecraftUsername} is waiting: buyer is currently offline on donutsmp.net.`
-        })
-        // Immediately try again to pick up other orders
-        return this.processNext()
-      }
-    }
-
-    if (!nextOrder) return
-
     this.processing = true
     try {
-      await this.executeOrder(bot, nextOrder)
-    } catch (err) {
-      this.log(`[DELIVERY] Error processing order ${nextOrder.orderId}: ${err.message}`, 'error')
-      nextOrder.lastError = err.message
-      nextOrder.updatedAt = Date.now()
+      while (true) {
+        this.pendingRerun = false
+        const now = Date.now()
+        let nextOrder = null
 
-      const isInsufficientStock = String(err.message || '').includes('Insufficient')
-      if (isInsufficientStock) {
-        nextOrder.attempts = Math.max(0, (nextOrder.attempts || 1) - 1)
-        nextOrder.status = 'waiting_for_player'
-        nextOrder.nextAttemptAt = Date.now() + 30000
-        nextOrder.lastChatMessage = `⏳ Waiting for Ender Chest restock to fulfill Order #${nextOrder.orderId}. Retrying automatically...`
-        this.log(
-          `[DELIVERY] Ender Chest stock-out for Order #${nextOrder.orderId}; attempt not counted toward maxRetries. Waiting 30s for restock.`,
-          'warn'
+        // Priority 1: Any order that still needs Money sent (works offline & online)
+        nextOrder = this.queue.find(
+          (o) =>
+            o.status !== 'completed' &&
+            o.status !== 'failed' &&
+            !o.moneyDelivered &&
+            (o.moneyAmount > 0 || o.money > 0) &&
+            (o.nextAttemptAt || 0) <= now
         )
-      } else {
-        // Guaranteed Zombie State Cleanup (EC-01 & EC-10)
-        if (nextOrder.status === 'delivering' || nextOrder.status === 'pending') {
-          if (nextOrder.attempts >= this.maxRetries) {
-            nextOrder.status = 'failed'
-            nextOrder.lastChatMessage = `⚠️ Auto-delivery failed after ${this.maxRetries} attempts (${err.message}). Staff have been alerted to complete your delivery manually.`
-            this.log(`[DELIVERY] Order #${nextOrder.orderId} reached max retries (${this.maxRetries}). Marked FAILED (Dead-Letter).`, 'error')
-          } else {
-            nextOrder.status = 'waiting_for_player'
+
+        // Priority 2: Physical items for ONLINE buyers whose backoff timer has elapsed
+        if (!nextOrder) {
+          const eligiblePhysicalOrders = this.queue.filter((o) => {
+            if (o.status === 'completed' || o.status === 'failed' || o.status === 'waiting_for_staff') return false
+            if (o.itemsDelivered || !o.hasNonMoneyItems) return false
+            if (o.attempts >= this.maxRetries) return false
+            if ((o.nextAttemptAt || 0) > now) return false
+            return true
+          })
+
+          for (const candidate of eligiblePhysicalOrders) {
+            // Allow unsupported custom item orders (spawners === 0 && elytras === 0 && otherItemsCount > 0) to transition immediately to waiting_for_staff
+            if (candidate.otherItemsCount > 0 && candidate.spawners === 0 && candidate.elytras === 0) {
+              nextOrder = candidate
+              break
+            }
+
+            const user = String(candidate.minecraftUsername || candidate.recipient || '').trim()
+            const isOnline = await isPlayerOnline(bot, user)
+            if (isOnline) {
+              nextOrder = candidate
+              break
+            } else {
+              // Defer offline player with backoff without blocking the queue
+              candidate.status = 'waiting_for_player'
+              candidate.lastError = `Buyer ${user} is offline (tab suggestion not found)`
+              candidate.nextAttemptAt = now + 15000
+              candidate.updatedAt = now
+              this.saveQueue()
+              this.notifyUpdate(candidate, {
+                chatMessage: `⏳ Order #${candidate.orderId} for ${candidate.minecraftUsername} is waiting: buyer is currently offline on donutsmp.net.`
+              })
+            }
           }
         }
 
-        // Exponential backoff: 5s, 10s, 20s, 40s... up to 180s
-        const backoffSec = Math.min(180, Math.max(5, Math.pow(2, nextOrder.attempts) * 5))
-        nextOrder.nextAttemptAt = Date.now() + backoffSec * 1000
-      }
+        if (nextOrder) {
+          try {
+            await this.executeOrder(bot, nextOrder)
+          } catch (err) {
+            this.log(`[DELIVERY] Error processing order ${nextOrder.orderId}: ${err.message}`, 'error')
+            nextOrder.lastError = err.message
+            nextOrder.updatedAt = Date.now()
 
-      this.saveQueue()
-      await this.notifyUpdate(nextOrder)
+            const isInsufficientStock = String(err.message || '').includes('Insufficient')
+            if (isInsufficientStock) {
+              nextOrder.attempts = Math.max(0, (nextOrder.attempts || 1) - 1)
+              nextOrder.status = 'waiting_for_player'
+              nextOrder.nextAttemptAt = Date.now() + 30000
+              nextOrder.lastChatMessage = `⏳ Waiting for Ender Chest restock to fulfill Order #${nextOrder.orderId}. Retrying automatically...`
+              this.log(
+                `[DELIVERY] Ender Chest stock-out for Order #${nextOrder.orderId}; attempt not counted toward maxRetries. Waiting 30s for restock.`,
+                'warn'
+              )
+            } else {
+              // Guaranteed Zombie State Cleanup (EC-01 & EC-10)
+              if (nextOrder.status === 'delivering' || nextOrder.status === 'pending') {
+                if (nextOrder.attempts >= this.maxRetries) {
+                  nextOrder.status = 'failed'
+                  nextOrder.lastChatMessage = `⚠️ Auto-delivery failed after ${this.maxRetries} attempts (${err.message}). Staff have been alerted to complete your delivery manually.`
+                  this.log(`[DELIVERY] Order #${nextOrder.orderId} reached max retries (${this.maxRetries}). Marked FAILED (Dead-Letter).`, 'error')
+                } else {
+                  nextOrder.status = 'waiting_for_player'
+                }
+              }
+
+              // Exponential backoff: 5s, 10s, 20s, 40s... up to 180s
+              const backoffSec = Math.min(180, Math.max(5, Math.pow(2, nextOrder.attempts) * 5))
+              nextOrder.nextAttemptAt = Date.now() + backoffSec * 1000
+            }
+
+            this.saveQueue()
+            await this.notifyUpdate(nextOrder)
+          }
+        } else {
+          // If no order was executable and no concurrent rerun requested, finish loop
+          if (!this.pendingRerun) {
+            break
+          }
+        }
+      }
     } finally {
       this.processing = false
-      setTimeout(() => this.processNext(), 2000)
+      if (this.processTimer) clearTimeout(this.processTimer)
+      this.processTimer = setTimeout(() => this.processNext(), 2000)
     }
   }
 
@@ -532,11 +577,9 @@ export class DeliveryQueueManager {
         return
       }
 
-      // Pre-flight Online Check: Confirm buyer is online right before physical handling
-      const onlinePlayers = new Set(
-        Object.keys(bot?.players || {}).map((p) => p.toLowerCase())
-      )
-      if (!onlinePlayers.has(username.toLowerCase())) {
+      // Pre-flight Online Check: Confirm buyer is online via tab complete right before physical handling
+      const isOnline = await isPlayerOnline(bot, username)
+      if (!isOnline) {
         order.status = 'waiting_for_player'
         order.lastError = `Buyer ${username} is offline on donutsmp.net`
         order.nextAttemptAt = Date.now() + 15000
@@ -554,10 +597,15 @@ export class DeliveryQueueManager {
 
       // Step 2a: Return to base FIRST before capturing startBasePos
       await this.returnToBaseSafely(bot, null, 4000)
-      const startBasePos = bot.entity?.position?.clone()
+      const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
 
+      // Step 2b: Ensure bot inventory starts clean (deposit any leftover spawners/elytras into Ender Chest)
       if (order.spawners > 0 || order.elytras > 0) {
-        // Step 2b: Open physical Ender Chest at base and withdraw items
+        await depositBackToEnderChest(bot)
+      }
+
+      // Step 2c: Withdraw exact items ordered from Ender Chest
+      if (order.spawners > 0 || order.elytras > 0) {
         this.log(
           `[DELIVERY] Withdrawing ${order.spawners}x Spawner and ${order.elytras}x Elytra from Ender Chest...`
         )
@@ -566,40 +614,88 @@ export class DeliveryQueueManager {
           elytras: order.elytras
         })
       }
+      // Step 2c: Send /tpa <username> and listen for immediate offline feedback
+      let offlineChatDetected = null
+      const offlineKeywords = [
+        'not online',
+        'is not online',
+        'player not found',
+        'user not found',
+        'user is not online',
+        'player is offline',
+        'could not find player',
+        'no player found'
+      ]
 
-      // Step 2c: Send /tpa <username>
-      this.log(`[DELIVERY] Sending /tpa ${username}...`)
-      safeChat(bot, `/tpa ${username}`)
-      await delay(600)
-      safeChat(
-        bot,
-        `/msg ${username} [Bluxmart] Order #${order.orderId} ready! Accept /tpa in-game in a SAFE spot (no hazards or PvP).`
-      )
+      const onTpaChatMessage = (msg) => {
+        const lower = String(msg || '').toLowerCase()
+        if (offlineKeywords.some((kw) => lower.includes(kw))) {
+          offlineChatDetected = String(msg).trim()
+        }
+      }
 
-      // Step 2d: Wait for teleport completion
-      const tpSuccess = await this.waitForTeleport(bot, username, startBasePos, this.tpaTimeoutMs)
-      if (!tpSuccess) {
+      if (typeof bot.on === 'function') {
+        bot.on('messagestr', onTpaChatMessage)
+      }
+
+      let tpResult
+      try {
+        this.log(`[DELIVERY] Sending /tpa ${username}...`)
+        safeChat(bot, `/tpa ${username}`)
+        await delay(600)
+        if (!offlineChatDetected) {
+          safeChat(
+            bot,
+            `/msg ${username} [Bluxmart] Order #${order.orderId} ready! Accept /tpa in-game in a SAFE spot (no hazards or PvP).`
+          )
+        }
+
+        // Step 2d: Wait for teleport completion
+        tpResult = await this.waitForTeleport(
+          bot,
+          username,
+          startBasePos,
+          this.tpaTimeoutMs,
+          () => offlineChatDetected
+        )
+      } finally {
+        if (typeof bot.removeListener === 'function') {
+          bot.removeListener('messagestr', onTpaChatMessage)
+        } else if (typeof bot.off === 'function') {
+          bot.off('messagestr', onTpaChatMessage)
+        }
+      }
+      if (!tpResult || !tpResult.success) {
+        const isOfflineChat = tpResult?.reason === 'offline_chat'
+        const errorReason = isOfflineChat
+          ? `Buyer is offline (chat: "${tpResult.message}")`
+          : (tpResult?.reason === 'timeout' ? 'Waiting for buyer to accept /tpa' : '/tpa failed')
+
         this.log(
-          `[DELIVERY] /tpa to ${username} timed out (not accepted). Safely returning items to Ender Chest.`,
+          `[DELIVERY] /tpa to ${username} aborted (${errorReason}). Safely returning items to Ender Chest.`,
           'warn'
         )
-        safeChat(
-          bot,
-          `/msg ${username} [Bluxmart] /tpa expired for Order #${order.orderId}. Whisper "claim" in-game to retry!`
-        )
+        if (!isOfflineChat) {
+          safeChat(
+            bot,
+            `/msg ${username} [Bluxmart] /tpa expired for Order #${order.orderId}. Whisper "claim" in-game to retry!`
+          )
+        }
         if (order.spawners > 0 || order.elytras > 0) {
           await this.returnToBaseSafely(bot, startBasePos, 8000)
           await depositBackToEnderChest(bot)
         }
         const reachedMax = order.attempts >= this.maxRetries
         order.status = reachedMax ? 'failed' : 'waiting_for_player'
-        order.lastError = reachedMax ? `Exceeded max delivery attempts (${this.maxRetries})` : 'Waiting for buyer to accept /tpa'
-        order.nextAttemptAt = Date.now() + 20000
+        order.lastError = reachedMax ? `Exceeded max delivery attempts (${this.maxRetries})` : errorReason
+        order.nextAttemptAt = Date.now() + (isOfflineChat ? 15000 : 20000)
         order.updatedAt = Date.now()
         this.saveQueue()
         const msg = reachedMax
           ? `⚠️ Auto-delivery failed after ${this.maxRetries} attempts (${order.lastError}). Staff have been alerted to complete your delivery manually.`
-          : `⚠️ /tpa to ${username} timed out for Order #${order.orderId}. Whisper "claim" to retry.`
+          : (isOfflineChat
+              ? `⚠️ Delivery deferred: ${username} appears offline in-game. Whisper "claim" once online.`
+              : `⚠️ /tpa to ${username} timed out for Order #${order.orderId}. Whisper "claim" to retry.`)
         order.lastChatMessage = msg
         await this.notifyUpdate(order, { chatMessage: msg })
         return
@@ -702,11 +798,19 @@ export class DeliveryQueueManager {
     }
   }
 
-  async waitForTeleport(bot, username, startBasePos, timeoutMs) {
+  async waitForTeleport(bot, username, startBasePos, timeoutMs, getOfflineChat) {
     const startTime = Date.now()
     while (Date.now() - startTime < timeoutMs) {
+      const offlineMsg = typeof getOfflineChat === 'function' ? getOfflineChat() : null
+      if (offlineMsg) {
+        return { success: false, reason: 'offline_chat', message: offlineMsg }
+      }
       await delay(500)
-      if (!bot.entity) return false
+      const offlineMsgAfter = typeof getOfflineChat === 'function' ? getOfflineChat() : null
+      if (offlineMsgAfter) {
+        return { success: false, reason: 'offline_chat', message: offlineMsgAfter }
+      }
+      if (!bot.entity) return { success: false, reason: 'no_entity' }
       const buyerEntity = bot.players?.[username]?.entity
       const movedFromBase = Boolean(startBasePos && bot.entity.position.distanceTo(startBasePos) > 10)
       const nearBuyer = Boolean(
@@ -714,10 +818,10 @@ export class DeliveryQueueManager {
       )
       if (movedFromBase || nearBuyer) {
         this.log(`[DELIVERY] Teleport confirmed for ${username}! Proceeding with safety check...`)
-        return true
+        return { success: true }
       }
     }
-    return false
+    return { success: false, reason: 'timeout' }
   }
 
   /**

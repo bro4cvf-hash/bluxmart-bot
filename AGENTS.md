@@ -9,3 +9,7 @@
 ## Code Exploration & Shell Safety
 - **Strict Ban on Recursive Shell Grep**: NEVER run `Get-ChildItem -Recurse` or `dir /s`. They choke on `node_modules` and `.git`.
 - **Primary Tool**: Use `codegraph` (`mcp_codegraph_codegraph_explore`) for all symbol, component, and file searches.
+
+## Web Research & Search
+- **Strictly Ban Native search_web**: Native `search_web` is OBSOLETE. Use `parallel-search` 100% of the time:
+  `call_mcp_tool("parallel-search", "web_search", {"objective": "...", "search_queries": ["..."]})`

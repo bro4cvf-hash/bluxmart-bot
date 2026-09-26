@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
+import EventEmitter from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 import { Vec3 } from 'vec3'
-import { DeliveryQueueManager } from './deliveryQueue.js'
+import { DeliveryQueueManager, isPlayerOnline } from './deliveryQueue.js'
 
 const TEST_QUEUE_FILE = path.resolve('./test-delivery-queue.json')
 const TEST_BAK_FILE = `${TEST_QUEUE_FILE}.bak`
@@ -15,9 +16,9 @@ function cleanupTestFiles() {
 }
 cleanupTestFiles()
 
-async function waitForIdle(manager, timeoutMs = 8000) {
+async function waitForIdle(manager, timeoutMs = 15000) {
   const start = Date.now()
-  await new Promise((r) => setTimeout(r, 100))
+  await new Promise((r) => setTimeout(r, 150))
   while (manager.processing) {
     if (Date.now() - start > timeoutMs) {
       throw new Error(`Timeout waiting for manager to become idle (processing = ${manager.processing})`)
@@ -27,6 +28,7 @@ async function waitForIdle(manager, timeoutMs = 8000) {
 }
 
 function createMockBot(opts = {}) {
+  const emitter = new EventEmitter()
   const chatMessages = []
   const tossedItems = []
   let pos = opts.initialPos ? opts.initialPos.clone() : new Vec3(0, 64, 0)
@@ -43,6 +45,26 @@ function createMockBot(opts = {}) {
       }
     },
     entities: opts.entities || {},
+    on: (evt, fn) => emitter.on(evt, fn),
+    removeListener: (evt, fn) => emitter.removeListener(evt, fn),
+    off: (evt, fn) => emitter.off(evt, fn),
+    emit: (evt, ...args) => emitter.emit(evt, ...args),
+    async tabComplete(text, assumeCommand = false, sendBlockInSight = false, timeout = 3500) {
+      if (typeof opts.tabComplete === 'function') {
+        return opts.tabComplete(text, assumeCommand, sendBlockInSight, timeout)
+      }
+      if (text.startsWith('/tpa ')) {
+        const query = text.slice(5).trim().toLowerCase()
+        const matched = []
+        for (const p of Object.keys(this.players || {})) {
+          if (p.toLowerCase().startsWith(query)) {
+            matched.push(p)
+          }
+        }
+        return matched
+      }
+      return []
+    },
     inventory: {
       items: () => opts.inventoryItems || [
         { name: 'spawner', type: 52, count: 64 },
@@ -52,13 +74,18 @@ function createMockBot(opts = {}) {
     },
     chat(msg) {
       chatMessages.push(msg)
+      if (typeof opts.onChatHook === 'function') {
+        opts.onChatHook(msg, this, emitter)
+      }
       if (msg.startsWith('/tpa')) {
-        const targetName = msg.split(' ')[1]
-        const targetPos = this.players[targetName]?.entity?.position
-        if (targetPos) {
-          this.entity.position = targetPos.offset(1, 0, 1)
-        } else {
-          this.entity.position = new Vec3(100, 64, 100)
+        if (opts.simulateTeleport !== false) {
+          const targetName = msg.split(' ')[1]
+          const targetPos = this.players[targetName]?.entity?.position
+          if (targetPos) {
+            this.entity.position = targetPos.offset(1, 0, 1)
+          } else {
+            this.entity.position = new Vec3(100, 64, 100)
+          }
         }
       } else if (msg.startsWith('/home 1') || msg.startsWith('/home')) {
         // simulate returning home to base
@@ -308,10 +335,79 @@ async function runTests() {
   )
   console.log('✅ Test 10: Security guard blocked Minecraft /pay argument & newline injection attacks.\n')
 
+  // Test 11: Tab Complete Online Verification (/tpa prefix)
+  console.log('--- Test 11: Tab Complete Online Verification (/tpa prefix) ---')
+  const tabMockBot = createMockBot({
+    players: {
+      DrDonrtt: { entity: { position: new Vec3(100, 64, 100) } }
+    }
+  })
+  const isDrDonrttOnline = await isPlayerOnline(tabMockBot, 'DrDonrtt')
+  assert.equal(isDrDonrttOnline, true, 'DrDonrtt should be detected as online via /tpa drdonrt prefix tab completion')
+
+  const isCaseInsensitiveOnline = await isPlayerOnline(tabMockBot, 'drdonrtt')
+  assert.equal(isCaseInsensitiveOnline, true, 'Tab completion matching must be case-insensitive')
+
+  const isGhostOnline = await isPlayerOnline(tabMockBot, 'GhostPlayer')
+  assert.equal(isGhostOnline, false, 'GhostPlayer without tab suggestions must return false (offline)')
+  console.log('✅ Test 11: Tab complete (/tpa prefix) online check successfully verified.\n')
+
+  // Test 12: Chat "This user is not online" Catch & Safe Ender Chest Rollback
+  console.log('--- Test 12: Chat "This user is not online" Catch & Safe Ender Chest Rollback ---')
+  let depositedBack = false
+  const chatOfflineBot = createMockBot({
+    players: {
+      GhostBuyer: { entity: { position: new Vec3(100, 64, 100) } }
+    },
+    simulateTeleport: false,
+    onChatHook(msg, bot, emitter) {
+      if (msg.startsWith('/tpa GhostBuyer')) {
+        // Emit in-game chat error when TPA is sent
+        setImmediate(() => {
+          emitter.emit('messagestr', 'This user is not online')
+        })
+      }
+    }
+  })
+  chatOfflineBot.openContainer = async () => ({
+    containerItems: () => [
+      { name: 'spawner', type: 52, count: 64 },
+      { name: 'elytra', type: 443, count: 1 }
+    ],
+    withdraw: async () => {},
+    deposit: async () => {
+      depositedBack = true
+    },
+    close: () => {}
+  })
+
+  const chatTestManager = new DeliveryQueueManager(() => chatOfflineBot, {
+    queueFilePath: TEST_QUEUE_FILE,
+    tpaTimeoutMs: 3000
+  })
+
+  await chatTestManager.enqueue({
+    orderId: 'ord_chat_offline',
+    minecraftUsername: 'GhostBuyer',
+    spawners: 2,
+    elytras: 0
+  })
+
+  await waitForIdle(chatTestManager, 10000)
+
+  const offlineOrder = chatTestManager.queue.find((o) => o.orderId === 'ord_chat_offline')
+  assert.equal(offlineOrder.status, 'waiting_for_player', 'Order should transition to waiting_for_player on chat offline detection')
+  assert.ok(
+    offlineOrder.lastError && offlineOrder.lastError.includes('This user is not online'),
+    `lastError should capture chat message, got: ${offlineOrder.lastError}`
+  )
+  assert.equal(depositedBack, true, 'Items must be deposited back into Ender Chest on chat offline abort')
+  console.log('✅ Test 12: Server chat "This user is not online" successfully caught, TPA canceled, items returned to Ender Chest.\n')
+
   // Cleanup
   cleanupTestFiles()
 
-  console.log('🎉 ALL 10 Architectural Resilience Tests Passed Successfully (100% Green)!')
+  console.log('🎉 ALL 12 Architectural Resilience Tests Passed Successfully (100% Green)!')
   process.exit(0)
 }
 
