@@ -97,7 +97,7 @@ export function isBlockClearOrAir(block) {
  * @returns {Promise<boolean>}
  */
 export async function raycastToPoint(bot, ecBlock, targetPoint) {
-  const eyeHeight = bot.entity?.height || 1.62
+  const eyeHeight = bot.entity?.eyeHeight || 1.62
   const eyePos = bot.entity.position.offset(0, eyeHeight, 0)
   const dir = targetPoint.minus(eyePos)
   const dist = dir.norm()
@@ -210,7 +210,7 @@ function normalizeAngle(rad) {
  * @param {Vec3} targetPoint
  */
 export async function smoothLookAt(bot, targetPoint) {
-  const eyeHeight = bot.entity?.height || 1.62
+  const eyeHeight = bot.entity?.eyeHeight || 1.62
   const eyePos = bot.entity.position.offset(0, eyeHeight, 0)
   const delta = targetPoint.minus(eyePos)
 
@@ -244,11 +244,30 @@ export async function smoothLookAt(bot, targetPoint) {
     const currentPitch = startPitch + deltaPitch * easedT + jitterPitch
 
     if (typeof bot.look === 'function') {
-      await bot.look(currentYaw, currentPitch, false)
+      try {
+        await Promise.race([
+          bot.look(currentYaw, currentPitch, false),
+          delay(100)
+        ])
+      } catch {
+        try { await bot.look(currentYaw, currentPitch, true) } catch {}
+      }
     }
 
     const stepDelay = Math.max(15, Math.min(25, baseStepDelay + Math.floor((Math.random() - 0.5) * 6)))
     await delay(stepDelay)
+  }
+
+  // Ensure exact final orientation is reached
+  if (typeof bot.look === 'function') {
+    try {
+      await Promise.race([
+        bot.look(startYaw + deltaYaw, targetPitch, false),
+        delay(120)
+      ])
+    } catch {
+      try { await bot.look(startYaw + deltaYaw, targetPitch, true) } catch {}
+    }
   }
 }
 
@@ -329,34 +348,96 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
     await delay(150)
   }
 
+  // Ensure controls & sneak are released
+  if (typeof bot.clearControlStates === 'function') {
+    bot.clearControlStates()
+  }
+
   const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
 
-  // 1. Move within comfortable reach (<= 2.5m) if needed
+  // 1. Move within comfortable reach (<= 2.6m) if needed
   if (bot.entity?.position) {
     const dist = bot.entity.position.distanceTo(chestCenter)
-    if (dist > 2.5 && typeof bot.setControlState === 'function') {
+    if (dist > 2.6 && typeof bot.setControlState === 'function') {
       if (typeof bot.lookAt === 'function') {
-        await bot.lookAt(chestCenter, true)
+        try {
+          await Promise.race([bot.lookAt(chestCenter, false), delay(200)])
+        } catch {
+          try { await bot.lookAt(chestCenter, true) } catch {}
+        }
       }
       bot.setControlState('forward', true)
-      await delay(Math.min(400, Math.floor((dist - 2.0) * 200)))
+      await delay(Math.min(350, Math.max(100, Math.floor((dist - 2.0) * 200))))
       bot.setControlState('forward', false)
-      await delay(100)
+      await delay(120)
     }
   }
 
-  // 2. Look directly at chest center
-  if (typeof bot.lookAt === 'function') {
-    await bot.lookAt(chestCenter, true)
-    await delay(150)
+  // 2. Select an empty hotbar slot if available so hand is empty (prevents accidental block placing/eating)
+  if (bot.inventory && typeof bot.setQuickBarSlot === 'function') {
+    const emptySlot = [0, 1, 2, 3, 4, 5, 6, 7, 8].find(
+      (slot) => !bot.inventory.slots[bot.inventory.hotbarStart + slot]
+    )
+    if (emptySlot !== undefined) {
+      bot.setQuickBarSlot(emptySlot)
+      await delay(50)
+    }
   }
 
-  // 3. Primary attempt: standard vanilla bot.openContainer(ecBlock)
+  // 3. Acquire best target point on the chest (lid or face)
+  let targetPoint = null
+  try {
+    targetPoint = await acquireEnderChestTarget(bot, ecBlock)
+  } catch {}
+  if (!targetPoint) {
+    targetPoint = ecBlock.position.offset(0.5, 0.88, 0.5)
+  }
+
+  // Determine direction & cursor position
+  let direction = new Vec3(0, 1, 0)
+  const relY = targetPoint.y - ecBlock.position.y
+  const relX = targetPoint.x - ecBlock.position.x
+  const relZ = targetPoint.z - ecBlock.position.z
+
+  if (relY >= 0.7) {
+    direction = new Vec3(0, 1, 0) // Up / top lid
+  } else if (relZ <= 0.2) {
+    direction = new Vec3(0, 0, -1) // North
+  } else if (relZ >= 0.8) {
+    direction = new Vec3(0, 0, 1) // South
+  } else if (relX <= 0.2) {
+    direction = new Vec3(-1, 0, 0) // West
+  } else if (relX >= 0.8) {
+    direction = new Vec3(1, 0, 0) // East
+  }
+  const cursorPos = new Vec3(
+    Math.max(0.1, Math.min(0.9, relX)),
+    Math.max(0.1, Math.min(0.9, relY)),
+    Math.max(0.1, Math.min(0.9, relZ))
+  )
+
+  // 4. Look directly at the Ender Chest before right clicking
+  if (typeof smoothLookAt === 'function') {
+    await smoothLookAt(bot, targetPoint)
+  }
+  if (typeof bot.lookAt === 'function') {
+    try {
+      await Promise.race([
+        bot.lookAt(targetPoint, false),
+        delay(300)
+      ])
+    } catch {
+      try { await bot.lookAt(targetPoint, true) } catch {}
+    }
+  }
+  await delay(180)
+
+  // 5. Primary attempt: open container
   const attemptTimeout = Math.max(3000, Math.floor(timeoutMs / 2))
   try {
     let timer
     return await Promise.race([
-      bot.openContainer(ecBlock),
+      bot.openContainer(ecBlock, direction, cursorPos),
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('Initial openContainer timed out')), attemptTimeout)
       })
@@ -364,21 +445,33 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
       if (timer) clearTimeout(timer)
     })
   } catch (err) {
-    // 4. Fallback retry: re-orient, clear window state, and retry
+    // 6. Fallback retry: re-orient directly at center, clear window state, and retry
     if (bot.currentWindow) {
       try {
         bot.closeWindow(bot.currentWindow)
       } catch {}
-      await delay(100)
-    }
-    if (typeof bot.lookAt === 'function') {
-      await bot.lookAt(chestCenter, true)
       await delay(150)
     }
 
+    const retryTarget = ecBlock.position.offset(0.5, 0.5, 0.5)
+    if (typeof smoothLookAt === 'function') {
+      await smoothLookAt(bot, retryTarget)
+    }
+    if (typeof bot.lookAt === 'function') {
+      try {
+        await Promise.race([
+          bot.lookAt(retryTarget, false),
+          delay(300)
+        ])
+      } catch {
+        try { await bot.lookAt(retryTarget, true) } catch {}
+      }
+    }
+    await delay(180)
+
     let fallbackTimer
     return await Promise.race([
-      bot.openContainer(ecBlock),
+      bot.openContainer(ecBlock, new Vec3(0, 1, 0), new Vec3(0.5, 0.5, 0.5)),
       new Promise((_, reject) => {
         fallbackTimer = setTimeout(
           () =>
