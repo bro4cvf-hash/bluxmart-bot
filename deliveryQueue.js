@@ -2,9 +2,11 @@ import fs from 'fs'
 import path from 'path'
 import { checkAreaSafety } from './safety.js'
 import {
+  findOrPlaceEnderChest,
+  openEnderChestSafely,
+  sanitizeBotInventory,
   withdrawFromEnderChest,
   depositBackToEnderChest,
-  sanitizeBotInventory,
   matchesCatalogCategory,
   isChestLidBlocked,
   closeContainer
@@ -549,6 +551,8 @@ export class DeliveryQueueManager {
     }
 
     this.log('[DELIVERY] Executing return to base...')
+    await closeContainer(bot)
+    await delay(150)
     safeChat(bot, '/home 1')
     await delay(600)
     await handleHomesGui()
@@ -578,6 +582,8 @@ export class DeliveryQueueManager {
         if (startPos && bot.entity.position.distanceTo(startPos) < 2) {
           retried = true
           this.log('[DELIVERY] Position unchanged halfway through timeout, retrying /home 1...')
+          await closeContainer(bot)
+          await delay(150)
           safeChat(bot, '/home 1')
           await delay(600)
           await handleHomesGui()
@@ -585,6 +591,7 @@ export class DeliveryQueueManager {
       }
     }
 
+    await closeContainer(bot)
     return false
   }
 
@@ -886,6 +893,9 @@ export class DeliveryQueueManager {
       await closeContainer(bot)
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
       // Step 2b: Ensure bot inventory starts clean (deposit any leftover items into Ender Chest)
+      console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before opening Ender Chest...`)
+      await closeContainer(bot)
+      await delay(250)
       this.log(`[DELIVERY] [${order.orderId}] Step 2b: Clearing stray inventory into Ender Chest...`)
       await sanitizeBotInventory(bot, { spawners: 0, elytras: 0 })
 
@@ -893,6 +903,9 @@ export class DeliveryQueueManager {
       order.currentStep = 'withdraw'
       await this.notifyUpdate(order, { currentStep: 'withdraw' })
       if (order.spawners > 0 || order.elytras > 0) {
+        console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before Ender Chest withdrawal...`)
+        await closeContainer(bot)
+        await delay(250)
         this.log(
           `[DELIVERY] [${order.orderId}] Step 2c: Looking at Ender Chest and withdrawing ${order.spawners || 0}x Spawner, ${order.elytras || 0}x Elytra...`
         )
@@ -908,6 +921,10 @@ export class DeliveryQueueManager {
           throw err
         }
       }
+
+      console.log(`[DELIVERY] [${order.orderId}] Items withdrawn from Ender Chest. Closing GUI before sending teleport...`)
+      await closeContainer(bot)
+      await delay(400)
 
       // Ender Chest items retrieved stage
       order.currentStep = 'items_retrieved'
@@ -953,6 +970,7 @@ export class DeliveryQueueManager {
         order.lastChatMessage = sentTpaMsg
         this.saveQueue()
         this.log(`[DELIVERY] [${order.orderId}] Step 2d: Sending /tpa ${username}...`)
+        await closeContainer(bot)
         safeChat(bot, `/tpa ${username}`)
         await this.notifyUpdate(order, {
           currentStep: 'sent_tpa',
@@ -1017,6 +1035,9 @@ export class DeliveryQueueManager {
         }
         if (order.spawners > 0 || order.elytras > 0) {
           await this.returnToBaseSafely(bot, startBasePos, 8000)
+          console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before returning items to Ender Chest...`)
+          await closeContainer(bot)
+          await delay(250)
           await depositBackToEnderChest(bot)
         }
         const reachedMax = order.attempts >= this.maxRetries
@@ -1058,6 +1079,9 @@ export class DeliveryQueueManager {
         )
         // Teleport to base safely and wait for base arrival before touching Ender Chest (EC-06)
         await this.returnToBaseSafely(bot, startBasePos, 8000)
+        console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before returning items to Ender Chest after hazard...`)
+        await closeContainer(bot)
+        await delay(250)
         await depositBackToEnderChest(bot)
         order.status = 'waiting_for_player'
         order.currentStep = 'unsafe_location'
@@ -1096,6 +1120,9 @@ export class DeliveryQueueManager {
             `/msg ${username} [Bluxmart] ⚠️ Unsafe location detected! Please get to a safe location and click Claim Order again.`
           )
           await this.returnToBaseSafely(bot, startBasePos, 8000)
+          console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before returning items to Ender Chest after drop abort...`)
+          await closeContainer(bot)
+          await delay(250)
           await depositBackToEnderChest(bot)
           order.status = 'waiting_for_player'
           order.currentStep = 'unsafe_location'

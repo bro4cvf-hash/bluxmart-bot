@@ -291,17 +291,25 @@ export async function closeContainer(bot) {
     await delay(150)
   }
 
-  // 2. Explicitly send close container packet (close_window) to server
-  // to ensure server-side containerMenu is reset to inventoryMenu even if
-  // client state was desynced or window was already marked closed locally.
+  // 2. Explicitly send close container packet (close_window) to server.
+  // Modern Spigot/Paper checks: if (this.player.containerMenu.containerId == packet.containerId())
+  // If the server-side container menu was assigned an ID (e.g. 1, 2, 3) or client state desynced,
+  // sending packet for tracked ID, recent window ID, common IDs, and 0 ensures server-side containerMenu
+  // is unconditionally reset to inventoryMenu.
   if (typeof bot._client?.write === 'function') {
-    try {
-      const lastId = bot.currentWindow?.id ?? bot._lastOpenedWindowId
-      if (lastId != null && lastId !== 0) {
-        bot._client.write('close_window', { windowId: lastId })
-      }
-      bot._client.write('close_window', { windowId: 0 })
-    } catch {}
+    const idsToClose = new Set()
+    if (bot.currentWindow?.id != null) idsToClose.add(bot.currentWindow.id)
+    if (bot._lastOpenedWindowId != null) idsToClose.add(bot._lastOpenedWindowId)
+    idsToClose.add(1)
+    idsToClose.add(2)
+    idsToClose.add(3)
+    idsToClose.add(0)
+
+    for (const winId of idsToClose) {
+      try {
+        bot._client.write('close_window', { windowId: winId })
+      } catch {}
+    }
     await delay(100)
   }
 
@@ -382,6 +390,7 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   if (!bot) throw new Error('Bot missing')
 
   await closeContainer(bot)
+  await delay(200)
 
   // Ensure controls & sneak are released locally and via entity_action packet
   if (typeof bot.clearControlStates === 'function') {
@@ -533,6 +542,7 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   const attemptTimeout = Math.max(3000, Math.floor(timeoutMs / 2))
   try {
     await closeContainer(bot)
+    await delay(150)
     let timer
     return await Promise.race([
       bot.openContainer(ecBlock, direction, cursorPos),
@@ -545,6 +555,7 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   } catch (err) {
     // 6. Fallback retry: check /ec command again or re-orient directly at center
     await closeContainer(bot)
+    await delay(200)
 
     const cmdWinRetry = bot._ecCommandSupported !== false ? await tryOpenViaCommand(2000) : null
     if (cmdWinRetry) return cmdWinRetry
@@ -567,6 +578,7 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
 
     let fallbackTimer
     await closeContainer(bot)
+    await delay(150)
     return await Promise.race([
       bot.openContainer(ecBlock, new Vec3(0, 1, 0), new Vec3(0.5, 0.5, 0.5)),
       new Promise((_, reject) => {
@@ -629,7 +641,6 @@ export async function sanitizeBotInventory(bot, allowedItems = { spawners: 0, el
   }
 
   let container = options?.container || null
-  const shouldClose = !container
 
   if (!container) {
     await closeContainer(bot)
@@ -674,14 +685,13 @@ export async function sanitizeBotInventory(bot, allowedItems = { spawners: 0, el
       await delay(150)
     }
   } finally {
-    if (shouldClose && container) {
+    if (container) {
       try {
         container.close()
       } catch {}
-      await delay(200)
     }
+    await closeContainer(bot)
   }
-
   return {
     sanitized: true,
     excessSpawners,
@@ -801,9 +811,12 @@ export async function withdrawFromEnderChest(bot, needed) {
       withdrawnElytras = missingElytras
     }
   } finally {
-    try {
-      container.close()
-    } catch {}
+    if (container) {
+      try {
+        container.close()
+      } catch {}
+    }
+    await closeContainer(bot)
   }
 
   await delay(250)
