@@ -1,0 +1,12 @@
+﻿BLUXBOT SAFE DEPLOYMENT PACKAGE
+
+Credentials are intentionally excluded from this archive:
+- .env
+- Discord bot token
+- dashboard/admin password hashes
+- data/guilds.json
+- data/bot-config.json
+- logs/
+- node_modules/
+
+Copy .env.example to .env on the destination server and add the rotated credentials there.

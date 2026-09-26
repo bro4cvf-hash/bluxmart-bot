@@ -302,7 +302,7 @@ async function loadStatus() {
     setIfClean('mc-join-msg', cfg.joinMessage || '');
     setIfClean('mc-name-type', cfg.nameType || 'default');
     $('mc-name-type')?.dispatchEvent(new Event('change'));
-    setIfClean('mc-safe-cmd', cfg.safeReturnCommand || '/home');
+    setIfClean('mc-safe-cmd', cfg.safeReturnCommand || '/home 1');
     setIfClean('mc-safety-radius', cfg.safetyRadius || 5);
     setIfClean('mc-tpa-timeout', cfg.tpaTimeout || 45);
     setIfClean('mc-antiafk-toggle', cfgBool.antiAfk !== undefined ? cfgBool.antiAfk : true);
@@ -1391,11 +1391,30 @@ window.dispatchBotChat = async function(msg) {
   }
 };
 
+// Movement & D-Pad Status Helper
+function updateMovementStatus() {
+  const activeButtons = document.querySelectorAll('.dpad-btn[data-move].active-move');
+  const isMoving = activeButtons.length > 0;
+  const statusBadge = $('ctrl-move-status');
+  const statusText = $('ctrl-move-status-text');
+
+  if (statusText) {
+    statusText.textContent = isMoving ? 'MOVING' : 'IDLE';
+  } else if (statusBadge && !statusBadge.querySelector('*')) {
+    statusBadge.textContent = isMoving ? 'MOVING' : 'IDLE';
+  }
+
+  if (statusBadge) {
+    statusBadge.classList.toggle('active', isMoving);
+  }
+}
+
 // Movement D-Pad Buttons
 document.querySelectorAll('.dpad-btn[data-move]').forEach((btn) => {
   const moveType = btn.dataset.move;
   btn.addEventListener('click', () => {
     const isActive = btn.classList.toggle('active-move');
+    updateMovementStatus();
     if (isActive) {
       dispatchBotControl('startmove', [moveType]);
       toast(`Started moving ${moveType}`);
@@ -1408,6 +1427,7 @@ document.querySelectorAll('.dpad-btn[data-move]').forEach((btn) => {
 
 $('btn-ctrl-reset-move')?.addEventListener('click', () => {
   document.querySelectorAll('.dpad-btn[data-move]').forEach((b) => b.classList.remove('active-move'));
+  updateMovementStatus();
   dispatchBotControl('resetmove');
   toast('Reset all movement controls');
 });
@@ -1422,11 +1442,36 @@ document.querySelectorAll('[data-look]').forEach((btn) => {
   });
 });
 
-// Hotbar Equip & Actions
+// Hotbar Equip & Actions Helper
+function selectHotbarSlot(slot) {
+  const slotStr = String(slot);
+  const select = $('mc-ctrl-hotbar-slot');
+  if (select) {
+    select.value = slotStr;
+  }
+  document.querySelectorAll('.mc-hotbar-slot-btn[data-slot]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.slot === slotStr);
+  });
+  dispatchBotControl('sethotbar', [slotStr]);
+  toast(`Equipped slot ${Number(slotStr) + 1}`);
+}
+
+// Interactive Hotbar Strip Buttons
+document.querySelectorAll('.mc-hotbar-slot-btn[data-slot]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    selectHotbarSlot(btn.dataset.slot);
+  });
+});
+
 $('btn-ctrl-set-hotbar')?.addEventListener('click', () => {
   const slot = $('mc-ctrl-hotbar-slot')?.value || '0';
-  dispatchBotControl('sethotbar', [slot]);
-  toast(`Equipped slot ${Number(slot) + 1}`);
+  selectHotbarSlot(slot);
+});
+$('mc-ctrl-hotbar-slot')?.addEventListener('change', (e) => {
+  const slot = e.target.value;
+  document.querySelectorAll('.mc-hotbar-slot-btn[data-slot]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.slot === slot);
+  });
 });
 $('btn-ctrl-use-held')?.addEventListener('click', () => {
   dispatchBotControl('useheld');
@@ -1437,13 +1482,31 @@ $('btn-ctrl-swing')?.addEventListener('click', () => {
   toast('Swung arm');
 });
 
-// Pathfinder Run Button
+// Pathfinder Run Button & Quick Chips
+document.querySelectorAll('.path-chip-btn[data-cmd]').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    const cmd = chip.dataset.cmd || '';
+    const input = $('mc-ctrl-pathfinder');
+    if (input) {
+      input.value = cmd;
+      input.focus();
+    }
+  });
+});
+
 $('btn-ctrl-run-pathfinder')?.addEventListener('click', () => {
   const raw = $('mc-ctrl-pathfinder')?.value.trim();
   if (!raw) return;
   const parts = raw.split(/\s+/);
   dispatchBotControl('pathfinder', parts);
   toast(`Pathfinder command dispatched: ${raw}`);
+});
+
+$('mc-ctrl-pathfinder')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    $('btn-ctrl-run-pathfinder')?.click();
+  }
 });
 
 // Slot Macros (Left Click, Right Click, Drop Slot, Close Window)
@@ -1468,7 +1531,33 @@ $('btn-ctrl-close-win')?.addEventListener('click', () => {
 });
 
 // KillAura Toggle & Controls
+function updateKillAuraUI() {
+  const toggle = $('mc-ctrl-killaura-toggle')?.checked || false;
+  $('killaura-master-box')?.classList.toggle('active', toggle);
+  $('ka-subtoggles-container')?.classList.toggle('dimmed', !toggle);
+
+  const kaBadge = $('ka-status-badge');
+  if (kaBadge) {
+    kaBadge.textContent = toggle ? 'ACTIVE' : 'STANDBY';
+    kaBadge.classList.toggle('active', toggle);
+  }
+
+  const range = $('mc-ka-range')?.value || '4';
+  const delay = $('mc-ka-delay')?.value || '10';
+
+  const rangeVal = $('mc-ka-range-val') || $('ka-range-val') || document.querySelector('.ka-range-val');
+  if (rangeVal) rangeVal.textContent = `${range}m`;
+  const rangeLabel = $('mc-ka-range-label') || $('ka-range-label');
+  if (rangeLabel) rangeLabel.textContent = `Range: ${range} Blocks`;
+
+  const delayVal = $('mc-ka-delay-val') || $('ka-delay-val') || document.querySelector('.ka-delay-val');
+  if (delayVal) delayVal.textContent = `${delay}t`;
+  const delayLabel = $('mc-ka-delay-label') || $('ka-delay-label');
+  if (delayLabel) delayLabel.textContent = `Hit Delay: ${delay} Ticks`;
+}
+
 function updateKillAura() {
+  updateKillAuraUI();
   const toggle = $('mc-ctrl-killaura-toggle')?.checked || false;
   const targetPlayer = $('mc-ka-player')?.checked || false;
   const targetMob = $('mc-ka-mob')?.checked || false;
@@ -1498,8 +1587,77 @@ $('mc-ka-player')?.addEventListener('change', updateKillAura);
 $('mc-ka-mob')?.addEventListener('change', updateKillAura);
 $('mc-ka-animal')?.addEventListener('change', updateKillAura);
 $('mc-ka-rotate')?.addEventListener('change', updateKillAura);
+$('mc-ka-range')?.addEventListener('input', updateKillAuraUI);
 $('mc-ka-range')?.addEventListener('change', updateKillAura);
+$('mc-ka-delay')?.addEventListener('input', updateKillAuraUI);
 $('mc-ka-delay')?.addEventListener('change', updateKillAura);
+
+// Initialize visual controls states
+updateKillAuraUI();
+updateMovementStatus();
+
+// Script Templates Presets
+const SCRIPT_TEMPLATES = {
+  afk: `# AFK Anti-Kick Routine
+chat /afk
+delay 2000
+startmove forward
+delay 400
+stopmove forward
+delay 1000
+startmove back
+delay 400
+stopmove back
+delay 1500
+swingArm`,
+
+  deposit: `# Deposit Macro
+chat /deposit
+delay 1500
+winclick 54 0
+delay 250
+winclick 55 0
+delay 250
+winclick 56 0
+delay 500
+closewindow`,
+
+  home: `# Return /home 1
+chat /home 1
+delay 3000
+look 0
+delay 500
+sethotbar 0`,
+
+  clear: ''
+};
+
+document.querySelectorAll('.script-tmpl-btn[data-tmpl]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const tmplKey = (btn.dataset.tmpl || '').toLowerCase();
+    const scriptArea = $('mc-ctrl-script-text');
+    if (!scriptArea) return;
+
+    let content = '';
+    if (tmplKey.includes('afk') || tmplKey.includes('kick')) {
+      content = SCRIPT_TEMPLATES.afk;
+    } else if (tmplKey.includes('deposit')) {
+      content = SCRIPT_TEMPLATES.deposit;
+    } else if (tmplKey.includes('home')) {
+      content = SCRIPT_TEMPLATES.home;
+    } else if (tmplKey.includes('clear')) {
+      content = SCRIPT_TEMPLATES.clear;
+    } else if (SCRIPT_TEMPLATES[tmplKey] !== undefined) {
+      content = SCRIPT_TEMPLATES[tmplKey];
+    } else {
+      content = btn.dataset.tmpl || '';
+    }
+
+    scriptArea.value = content;
+    scriptArea.focus();
+    toast(`Loaded script preset: ${btn.textContent.trim() || tmplKey}`);
+  });
+});
 
 // TrafficerMC Scripting Engine
 $('btn-ctrl-run-script')?.addEventListener('click', async () => {
@@ -1540,6 +1698,75 @@ $('btn-ctrl-stop-script')?.addEventListener('click', async () => {
     toast('Stopped script sequence');
   } catch (err) {
     toast(`Failed: ${err.message}`);
+  }
+});
+
+// Keyboard Shortcuts: Controller & Scripting
+$('mc-ctrl-script-text')?.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    $('btn-ctrl-run-script')?.click();
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  const ctrlView = $('mc-sub-controller');
+  if (!ctrlView) return;
+  const isVisible = ctrlView.classList.contains('active') ||
+    (ctrlView.offsetParent !== null && window.getComputedStyle(ctrlView).display !== 'none');
+  if (!isVisible) return;
+
+  // Ctrl+Enter inside #mc-ctrl-script-text to run script
+  if (e.ctrlKey && e.key === 'Enter' && document.activeElement?.id === 'mc-ctrl-script-text') {
+    e.preventDefault();
+    $('btn-ctrl-run-script')?.click();
+    return;
+  }
+
+  // Ignore controller hotkeys if user is actively typing in an input/textarea/select
+  const activeEl = document.activeElement;
+  const tag = activeEl ? activeEl.tagName.toUpperCase() : '';
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (activeEl && activeEl.isContentEditable);
+  if (isInput) return;
+
+  // Escape: STOP ALL movement
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    $('btn-ctrl-reset-move')?.click();
+    return;
+  }
+
+  // Prevent holding key repeating toggles
+  if (e.repeat) return;
+
+  // 1-9 for hotbar slots
+  if (e.key >= '1' && e.key <= '9') {
+    e.preventDefault();
+    const slot = String(Number(e.key) - 1);
+    const slotBtn = document.querySelector(`.mc-hotbar-slot-btn[data-slot="${slot}"]`);
+    if (slotBtn) {
+      slotBtn.click();
+    } else {
+      selectHotbarSlot(slot);
+    }
+    return;
+  }
+
+  // Movement & Action Keys (W/A/S/D/Arrows for movement, Space for jump, Shift for sneak)
+  let moveType = null;
+  if (e.code === 'KeyW' || e.key === 'ArrowUp') moveType = 'forward';
+  else if (e.code === 'KeyS' || e.key === 'ArrowDown') moveType = 'back';
+  else if (e.code === 'KeyA' || e.key === 'ArrowLeft') moveType = 'left';
+  else if (e.code === 'KeyD' || e.key === 'ArrowRight') moveType = 'right';
+  else if (e.code === 'Space' || e.key === ' ') moveType = 'jump';
+  else if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') moveType = 'sneak';
+
+  if (moveType) {
+    e.preventDefault();
+    const btn = document.querySelector(`.dpad-btn[data-move="${moveType}"]`);
+    if (btn) {
+      btn.click();
+    }
   }
 });
 

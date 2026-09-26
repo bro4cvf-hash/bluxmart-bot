@@ -401,7 +401,7 @@
 
               <div class="field">
                 <label for="mc-safe-cmd">Emergency Return Command</label>
-                <input type="text" id="mc-safe-cmd" value="/home" placeholder="/home">
+                <input type="text" id="mc-safe-cmd" value="/home 1" placeholder="/home 1">
                 <div class="hint">Auto-executes on threat or delivery</div>
               </div>
 
@@ -665,53 +665,151 @@
 
       <!-- SUBVIEW 4: TRAFFICERMC BOT CONTROLLER & SCRIPTING -->
       <div class="mc-subview" id="mc-sub-controller">
-        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));margin-bottom:16px">
-          <!-- Movement D-Pad, Look & Hand Controller -->
-          <div class="card">
-            <h3>Movement, Look &amp; Hand Controller</h3>
-            <p class="muted">Real-time TrafficerMC physics movement &amp; orientation controls.</p>
-
-            <div class="dpad-controller-housing" style="background:#090d16;border:1px solid var(--border-strong);border-radius:12px;padding:16px;max-width:320px;margin:12px auto;box-shadow:inset 0 2px 8px rgba(0,0,0,0.6)">
-              <div class="dpad-grid" style="margin:0 auto">
-                <div></div>
-                <button type="button" class="btn btn-secondary dpad-btn" data-move="forward" title="Forward (W)">
-                  <span>⬆️</span> <strong>W</strong>
-                </button>
-                <div></div>
-                <button type="button" class="btn btn-secondary dpad-btn" data-move="left" title="Left (A)">
-                  <span>⬅️</span> <strong>A</strong>
-                </button>
-                <button type="button" class="btn btn-danger dpad-btn" id="btn-ctrl-reset-move" title="Halt Movement">
-                  <span>⏹</span> <strong>STOP</strong>
-                </button>
-                <button type="button" class="btn btn-secondary dpad-btn" data-move="right" title="Right (D)">
-                  <span>➡️</span> <strong>D</strong>
-                </button>
-                <button type="button" class="btn btn-secondary dpad-btn" data-move="jump" title="Jump (Space)">
-                  <span>🦘</span> <strong>JUMP</strong>
-                </button>
-                <button type="button" class="btn btn-secondary dpad-btn" data-move="back" title="Back (S)">
-                  <span>⬇️</span> <strong>S</strong>
-                </button>
-                <button type="button" class="btn btn-secondary dpad-btn" data-move="sneak" title="Sneak (Shift)">
-                  <span>🧎</span> <strong>SNEAK</strong>
-                </button>
+        <div class="controller-dashboard-grid">
+          <!-- COLUMN 1: MOVEMENT, ORIENTATION & HOTBAR HUD -->
+          <div class="controller-card">
+            <div>
+              <div class="card-header-flex" style="margin-bottom:6px">
+                <div>
+                  <span class="card-tag">PHYSICS ENGINE</span>
+                  <h3>Movement &amp; Orientation</h3>
+                </div>
+                <span class="ctrl-status-badge active"><span class="ctrl-dot"></span>ACTIVE</span>
               </div>
-            </div>
+              <p class="muted" style="margin-bottom:12px">Real-time TrafficerMC physics movement, cardinal orientation &amp; hotbar HUD.</p>
 
-            <div class="toolbar" style="justify-content:center;gap:6px;display:flex;flex-wrap:wrap;margin-bottom:12px">
-              <button type="button" class="btn btn-secondary btn-sm" data-look="0">🧭 Look North</button>
-              <button type="button" class="btn btn-secondary btn-sm" data-look="3">🧭 Look South</button>
-              <button type="button" class="btn btn-secondary btn-sm" data-look="-1.5">🧭 Look East</button>
-              <button type="button" class="btn btn-secondary btn-sm" data-look="1.5">🧭 Look West</button>
-            </div>
+              <!-- WASD Directional Housing -->
+              <div class="game-controller-housing">
+                <div class="wasd-cluster">
+                  <div class="wasd-row-top">
+                    <button type="button" class="wasd-btn dpad-btn" data-move="forward" title="Forward (W)">
+                      <svg class="dpad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 19V5M5 12l7-7 7 7"/>
+                      </svg>
+                      <span class="wasd-key"><kbd>W</kbd></span>
+                      <span class="wasd-label">Forward</span>
+                    </button>
+                  </div>
+                  <div class="wasd-row-mid">
+                    <button type="button" class="wasd-btn dpad-btn" data-move="left" title="Left (A)">
+                      <svg class="dpad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                      </svg>
+                      <span class="wasd-key"><kbd>A</kbd></span>
+                      <span class="wasd-label">Left</span>
+                    </button>
+                    <button type="button" class="wasd-btn dpad-btn" data-move="back" title="Back (S)">
+                      <svg class="dpad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 5v14M19 12l-7 7-7-7"/>
+                      </svg>
+                      <span class="wasd-key"><kbd>S</kbd></span>
+                      <span class="wasd-label">Back</span>
+                    </button>
+                    <button type="button" class="wasd-btn dpad-btn" data-move="right" title="Right (D)">
+                      <svg class="dpad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                      </svg>
+                      <span class="wasd-key"><kbd>D</kbd></span>
+                      <span class="wasd-label">Right</span>
+                    </button>
+                  </div>
+                </div>
 
-            <div class="form-row">
-              <div class="field">
-                <label>Hotbar Slot (1–9)</label>
-                <div style="display:flex;gap:6px">
+                <!-- Bottom Action Row: Jump, Emergency Stop, Sneak -->
+                <div class="wasd-actions-row">
+                  <button type="button" class="wasd-action-btn dpad-btn" data-move="jump" title="Jump (Space)">
+                    <svg class="dpad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 15l-6-6-6 6M6 19h12"/>
+                    </svg>
+                    <span><kbd>Space</kbd> Jump</span>
+                  </button>
+                  <button type="button" class="wasd-halt-btn" id="btn-ctrl-reset-move" title="Emergency Stop All Movement (Esc)">
+                    <svg class="dpad-icon" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    </svg>
+                    <span><kbd>Esc</kbd> STOP ALL</span>
+                  </button>
+                  <button type="button" class="wasd-action-btn dpad-btn" data-move="sneak" title="Sneak (Shift)">
+                    <svg class="dpad-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M6 9l6 6 6-6M6 5h12"/>
+                    </svg>
+                    <span><kbd>Shift</kbd> Sneak</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Cardinal Look Segment: 4 equal columns -->
+              <div style="margin-bottom:12px">
+                <div class="muted" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Cardinal Look Direction</div>
+                <div class="cardinal-segment-grid">
+                  <button type="button" class="cardinal-btn" data-look="0" title="Look North (0°)">
+                    <svg class="cardinal-compass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polygon points="12,4 15,12 12,10 9,12" fill="#ef4444" stroke="none"/>
+                      <polygon points="12,20 15,12 12,10 9,12" fill="#94a3b8" stroke="none"/>
+                    </svg>
+                    <div class="cardinal-info">
+                      <strong>North</strong>
+                      <span>0°</span>
+                    </div>
+                  </button>
+                  <button type="button" class="cardinal-btn" data-look="-1.5" title="Look East (90°)">
+                    <svg class="cardinal-compass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polygon points="20,12 12,9 14,12 12,15" fill="#ef4444" stroke="none"/>
+                      <polygon points="4,12 12,9 14,12 12,15" fill="#94a3b8" stroke="none"/>
+                    </svg>
+                    <div class="cardinal-info">
+                      <strong>East</strong>
+                      <span>90°</span>
+                    </div>
+                  </button>
+                  <button type="button" class="cardinal-btn" data-look="3" title="Look South (180°)">
+                    <svg class="cardinal-compass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polygon points="12,20 9,12 12,14 15,12" fill="#ef4444" stroke="none"/>
+                      <polygon points="12,4 9,12 12,14 15,12" fill="#94a3b8" stroke="none"/>
+                    </svg>
+                    <div class="cardinal-info">
+                      <strong>South</strong>
+                      <span>180°</span>
+                    </div>
+                  </button>
+                  <button type="button" class="cardinal-btn" data-look="1.5" title="Look West (270°)">
+                    <svg class="cardinal-compass-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polygon points="4,12 12,15 10,12 12,9" fill="#ef4444" stroke="none"/>
+                      <polygon points="20,12 12,15 10,12 12,9" fill="#94a3b8" stroke="none"/>
+                    </svg>
+                    <div class="cardinal-info">
+                      <strong>West</strong>
+                      <span>270°</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Interactive 9-Slot Hotbar HUD Strip -->
+              <div class="mc-hotbar-container">
+                <div class="mc-hotbar-header">
+                  <span class="muted" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Active Hotbar Slot (1–9)</span>
+                  <span class="mono" style="font-size:11px;color:#38bdf8" id="mc-hotbar-active-label">Slot 1</span>
+                </div>
+                <div class="mc-hotbar-strip">
+                  <button type="button" class="mc-hotbar-slot-btn active" data-slot="0">1</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="1">2</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="2">3</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="3">4</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="4">5</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="5">6</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="6">7</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="7">8</button>
+                  <button type="button" class="mc-hotbar-slot-btn" data-slot="8">9</button>
+                </div>
+                <!-- Hidden select and button to preserve full compatibility with existing logic -->
+                <div style="display:none">
                   <select id="mc-ctrl-hotbar-slot">
-                    <option value="0">Slot 1</option>
+                    <option value="0" selected>Slot 1</option>
                     <option value="1">Slot 2</option>
                     <option value="2">Slot 3</option>
                     <option value="3">Slot 4</option>
@@ -721,108 +819,223 @@
                     <option value="7">Slot 8</option>
                     <option value="8">Slot 9</option>
                   </select>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-set-hotbar">Equip</button>
+                  <button type="button" id="btn-ctrl-set-hotbar">Equip</button>
                 </div>
               </div>
-              <div class="field">
-                <label>Hand Actions</label>
+
+              <!-- Hand Actions -->
+              <div>
+                <div class="muted" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Hand Actions</div>
+                <div class="hand-actions-grid">
+                  <button type="button" class="action-hand-btn primary" id="btn-ctrl-use-held" title="Use or place the item currently in hand">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
+                      <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/>
+                      <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/>
+                      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+                    </svg>
+                    <span>Use / Place Item</span>
+                  </button>
+                  <button type="button" class="action-hand-btn" id="btn-ctrl-swing" title="Swing bot arm / strike block or entity">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/>
+                      <line x1="13" y1="19" x2="19" y2="13"/>
+                      <line x1="16" y1="16" x2="20" y2="20"/>
+                      <line x1="19" y1="21" x2="21" y2="19"/>
+                    </svg>
+                    <span>Swing Arm</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- COLUMN 2: PATHFINDER, SLOT MACROS & COMBAT -->
+          <div class="controller-card">
+            <div>
+              <div class="card-header-flex" style="margin-bottom:6px">
+                <div>
+                  <span class="card-tag card-tag-amber">NAVIGATION &amp; COMBAT</span>
+                  <h3>Pathfinder &amp; Macros</h3>
+                </div>
+                <span class="badge blue">Autonomous</span>
+              </div>
+              <p class="muted" style="margin-bottom:12px">Automated A* pathfinding, inventory container click macros &amp; autonomous KillAura.</p>
+
+              <!-- Pathfinder Input & Command Chips -->
+              <div class="field" style="margin-bottom:12px">
+                <label for="mc-ctrl-pathfinder">Pathfinder Navigation</label>
                 <div style="display:flex;gap:6px">
-                  <button type="button" class="btn btn-primary btn-sm" id="btn-ctrl-use-held">🖐 Use Held</button>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-swing">⚔️ Swing</button>
+                  <input type="text" id="mc-ctrl-pathfinder" class="mono" placeholder="goto 100 64 100 | follow Player | stop">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-ctrl-run-pathfinder">Run</button>
+                </div>
+                <div class="pathfinder-chips-row">
+                  <button type="button" class="path-chip-btn" data-cmd="goto 0 64 0">goto 0 64 0</button>
+                  <button type="button" class="path-chip-btn" data-cmd="near 10 64 10 3">near 10 64 10 3</button>
+                  <button type="button" class="path-chip-btn" data-cmd="follow Player">follow Player</button>
+                  <button type="button" class="path-chip-btn" data-cmd="stop">stop</button>
+                </div>
+              </div>
+
+              <!-- Window Slot Macro -->
+              <div class="field" style="margin-bottom:14px">
+                <div class="card-header-flex" style="margin-bottom:4px">
+                  <label for="mc-ctrl-inv-slot" style="margin:0">Window Slot Macro</label>
+                  <span class="muted" style="font-size:11px">Container or player slot ID</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                  <input type="number" id="mc-ctrl-inv-slot" value="0" min="0" max="90" style="width:100px" placeholder="Slot #">
+                  <span class="muted" style="font-size:11.5px">Target slot index (0–89)</span>
+                </div>
+                <div class="slot-macro-actions-grid">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-win-left">Left Click</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-win-right">Right Click</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-drop-slot">Drop Slot</button>
+                  <button type="button" class="btn btn-danger btn-sm" id="btn-ctrl-close-win">Close GUI</button>
+                </div>
+              </div>
+
+              <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+
+              <!-- Autonomous KillAura Card -->
+              <div class="killaura-master-card" id="ka-master-housing">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:32px;height:32px;border-radius:8px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);display:flex;align-items:center;justify-content:center;color:#ef4444">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <strong style="color:#fff;font-size:13.5px">Autonomous KillAura</strong>
+                      <span class="badge" id="ka-status-badge">Standby</span>
+                    </div>
+                    <span class="muted" style="font-size:11.5px">Auto-strikes hostile targets within perimeter</span>
+                  </div>
+                </div>
+                <label class="apple-toggle apple-toggle-danger" style="margin:0" title="Toggle Autonomous KillAura">
+                  <input type="checkbox" id="mc-ctrl-killaura-toggle" role="switch" aria-labelledby="mc-ka-title">
+                  <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                </label>
+              </div>
+
+              <!-- KillAura Sub-toggles Grid with SVGs -->
+              <div class="ka-subtoggles-container dimmed" id="ka-subtoggles-wrap">
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">
+                  <div class="apple-toggle-flex" title="Target other players">
+                    <div class="toggle-label-with-icon">
+                      <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                      </svg>
+                      <span>Players</span>
+                    </div>
+                    <label class="apple-toggle" style="margin:0">
+                      <input type="checkbox" id="mc-ka-player" checked>
+                      <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                    </label>
+                  </div>
+
+                  <div class="apple-toggle-flex" title="Target monsters and hostile mobs">
+                    <div class="toggle-label-with-icon">
+                      <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="11" width="18" height="10" rx="2"/>
+                        <circle cx="12" cy="5" r="2"/>
+                        <path d="M12 7v4M8 15h.01M16 15h.01"/>
+                      </svg>
+                      <span>Hostile Mobs</span>
+                    </div>
+                    <label class="apple-toggle" style="margin:0">
+                      <input type="checkbox" id="mc-ka-mob" checked>
+                      <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                    </label>
+                  </div>
+
+                  <div class="apple-toggle-flex" title="Target passive animals">
+                    <div class="toggle-label-with-icon">
+                      <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 5.172C10 3.782 8.423 2.679 6.5 3c-2.823.47-4.113 6.006-4 7 .08.707.41 1.258 1 1.5M14 5.172C14 3.782 15.577 2.679 17.5 3c2.823.47 4.113 6.006 4 7-.08.707-.41 1.258-1 1.5"/>
+                        <rect x="5" y="10" width="14" height="11" rx="4"/>
+                        <circle cx="9" cy="14" r="1"/>
+                        <circle cx="15" cy="14" r="1"/>
+                      </svg>
+                      <span>Animals</span>
+                    </div>
+                    <label class="apple-toggle" style="margin:0">
+                      <input type="checkbox" id="mc-ka-animal">
+                      <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                    </label>
+                  </div>
+
+                  <div class="apple-toggle-flex" title="Automatically snap bot look orientation to victim">
+                    <div class="toggle-label-with-icon">
+                      <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                      </svg>
+                      <span>Auto-Rotate</span>
+                    </div>
+                    <label class="apple-toggle" style="margin:0">
+                      <input type="checkbox" id="mc-ka-rotate" checked>
+                      <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Combat Parameters -->
+                <div class="form-row" style="margin:0">
+                  <div class="field" style="margin:0">
+                    <label for="mc-ka-range">Striking Range (Blocks)</label>
+                    <input type="number" id="mc-ka-range" value="4" min="1" max="6" step="0.5">
+                  </div>
+                  <div class="field" style="margin:0">
+                    <label for="mc-ka-delay">Hit Delay (Ticks)</label>
+                    <input type="number" id="mc-ka-delay" value="10" min="1" max="40">
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Pathfinder, Window Click & KillAura Controller -->
-          <div class="card">
-            <h3>Pathfinder, Slot Clicks &amp; Combat</h3>
-            <p class="muted">Automated navigation (`goto`, `near`, `follow`) &amp; window slot macros.</p>
+          <!-- COLUMN 3: SCRIPT ENGINE -->
+          <div class="controller-card">
+            <div>
+              <div class="card-header-flex" style="margin-bottom:6px">
+                <div>
+                  <span class="card-tag card-tag-purple">AUTOMATION RUNTIME</span>
+                  <h3>Script Engine</h3>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-ctrl-run-script">▶ Run</button>
+                  <button type="button" class="btn btn-danger btn-sm" id="btn-ctrl-stop-script">⏹ Stop</button>
+                </div>
+              </div>
+              <p class="muted" style="margin-bottom:10px">Execute macro command sequences, automated loops, and custom routines across connected bots.</p>
 
-            <div class="field">
-              <label for="mc-ctrl-pathfinder">Pathfinder Command</label>
-              <div style="display:flex;gap:6px">
-                <input type="text" id="mc-ctrl-pathfinder" class="mono" placeholder="goto 100 64 100  |  follow Player  |  stop">
-                <button type="button" class="btn btn-primary btn-sm" id="btn-ctrl-run-pathfinder">Run</button>
+              <!-- Template Preset Buttons -->
+              <div class="script-templates-bar">
+                <span class="muted" style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-right:2px">Presets:</span>
+                <button type="button" class="script-tmpl-btn" data-tmpl="afk">⚡ AFK Routine</button>
+                <button type="button" class="script-tmpl-btn" data-tmpl="deposit">📦 Auto Deposit</button>
+                <button type="button" class="script-tmpl-btn" data-tmpl="home">🏠 Return Home</button>
+                <button type="button" class="script-tmpl-btn" data-tmpl="clear">✕ Clear</button>
               </div>
-              <div class="hint">Examples: <code>goto 0 64 0</code>, <code>near 10 64 10 3</code>, <code>follow Notch</code>, <code>stop</code></div>
-            </div>
 
-            <div class="field">
-              <label for="mc-ctrl-inv-slot">Window Slot Macro (Slot Number)</label>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <input type="number" id="mc-ctrl-inv-slot" value="0" min="0" max="90" style="width:90px">
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-win-left">Left Click</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-win-right">Right Click</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-ctrl-drop-slot">Drop Slot</button>
-                <button type="button" class="btn btn-danger btn-sm" id="btn-ctrl-close-win">Close GUI</button>
+              <!-- Script Editor Textarea -->
+              <div class="script-editor-container">
+                <textarea id="mc-ctrl-script-text" rows="8" class="mono" placeholder="chat /home 1&#10;delay 1500&#10;sethotbar 0&#10;useheld&#10;delay 1000&#10;winclick 13 0"></textarea>
               </div>
-            </div>
 
-            <hr style="border:0;border-top:1px solid var(--border);margin:16px 0">
-            <!-- Apple Switch Main KillAura Toggle -->
-            <div style="background:#090d16;border:1px solid var(--border-strong);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-              <div>
-                <strong style="display:block;color:#fff;font-size:13.5px">Autonomous KillAura</strong>
-                <span class="muted" style="font-size:11.5px">Auto-attack hostile entities within striking perimeter</span>
+              <!-- Checkboxes for Run on Connect & Run on Spawn -->
+              <div class="script-options-row">
+                <label class="script-opt-card" title="Automatically trigger this script sequence when bot logs in">
+                  <input type="checkbox" id="mc-script-on-connect">
+                  <span>Run on Connect</span>
+                </label>
+                <label class="script-opt-card" title="Automatically trigger this script sequence when bot respawns">
+                  <input type="checkbox" id="mc-script-on-spawn">
+                  <span>Run on Spawn</span>
+                </label>
               </div>
-              <label class="apple-toggle apple-toggle-danger" style="margin:0" title="Toggle KillAura">
-                <input type="checkbox" id="mc-ctrl-killaura-toggle">
-                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
-              </label>
-            </div>
-
-            <!-- Apple Switch Sub-Toggles Grid -->
-            <div class="apple-subtoggles-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:14px">
-              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
-                <span style="font-size:12.5px;font-weight:500">Players</span>
-                <input type="checkbox" id="mc-ka-player" checked>
-                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
-              </label>
-              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
-                <span style="font-size:12.5px;font-weight:500">Hostile Mobs</span>
-                <input type="checkbox" id="mc-ka-mob" checked>
-                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
-              </label>
-              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
-                <span style="font-size:12.5px;font-weight:500">Animals</span>
-                <input type="checkbox" id="mc-ka-animal">
-                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
-              </label>
-              <label class="apple-toggle" style="background:#0d1320;border:1px solid var(--border);border-radius:8px;padding:8px 10px;justify-content:space-between">
-                <span style="font-size:12.5px;font-weight:500">Auto-Rotate</span>
-                <input type="checkbox" id="mc-ka-rotate" checked>
-                <span class="apple-toggle-track"><span class="apple-toggle-thumb"></span></span>
-              </label>
-            </div>
-            <div class="form-row">
-              <div class="field" style="margin:0">
-                <label>Range (1–6 Blocks)</label>
-                <input type="number" id="mc-ka-range" value="4" min="1" max="6" step="0.5">
-              </div>
-              <div class="field" style="margin:0">
-                <label>Hit Delay (Ticks)</label>
-                <input type="number" id="mc-ka-delay" value="10" min="1" max="40">
-              </div>
-            </div>
-          </div>
-
-          <!-- TrafficerMC Scripting Engine Card -->
-          <div class="card">
-            <div class="card-header-flex">
-              <div>
-                <h3>TrafficerMC Script Engine</h3>
-                <p class="muted" style="margin:0">Run command sequences across bots</p>
-              </div>
-              <div style="display:flex;gap:6px">
-                <button type="button" class="btn btn-primary btn-sm" id="btn-ctrl-run-script">▶ Run</button>
-                <button type="button" class="btn btn-danger btn-sm" id="btn-ctrl-stop-script">⏹ Stop</button>
-              </div>
-            </div>
-            <textarea id="mc-ctrl-script-text" rows="6" class="mono" placeholder="chat /home&#10;delay 1500&#10;sethotbar 0&#10;useheld&#10;delay 1000&#10;winclick 13 0"></textarea>
-            <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
-              <label class="checkbox-label"><input type="checkbox" id="mc-script-on-connect"><span>Run on Connect</span></label>
-              <label class="checkbox-label"><input type="checkbox" id="mc-script-on-spawn"><span>Run on Spawn</span></label>
             </div>
           </div>
         </div>
@@ -858,7 +1071,7 @@
 
         <form id="bot-chat-form" class="chat-sender-form pro-chat-form" style="margin:0">
           <span class="prefix-symbol">&gt;</span>
-          <input type="text" id="bot-chat-input" placeholder="Type in-game chat or command (e.g. /home, /tpa, /ec, /pay, /balance)…" autocomplete="off">
+          <input type="text" id="bot-chat-input" placeholder="Type in-game chat or command (e.g. /home 1, /tpa, /ec, /pay, /balance)…" autocomplete="off">
           <span class="shortcut-badge"><kbd style="font-family:inherit">↵</kbd> Return</span>
           <button type="submit" class="btn btn-primary btn-sm" id="btn-send-chat">Send</button>
         </form>
@@ -1121,7 +1334,7 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <script src="/app.js"></script>
 <script>
 // Live Console Filter Tabs interactivity
@@ -1168,6 +1381,73 @@ document.addEventListener('mouseover', (e) => {
     }
   }
 });
+
+// Hotbar HUD strip quick select
+document.querySelectorAll('.mc-hotbar-slot-btn[data-slot]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mc-hotbar-slot-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const slot = btn.getAttribute('data-slot');
+    const label = document.getElementById('mc-hotbar-active-label');
+    if (label) label.textContent = `Slot ${parseInt(slot, 10) + 1}`;
+    const sel = document.getElementById('mc-ctrl-hotbar-slot');
+    if (sel) sel.value = slot;
+    const equipBtn = document.getElementById('btn-ctrl-set-hotbar');
+    if (equipBtn) equipBtn.click();
+  });
+});
+
+// Pathfinder quick command chips
+document.querySelectorAll('.path-chip-btn[data-cmd]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const input = document.getElementById('mc-ctrl-pathfinder');
+    if (input) {
+      input.value = chip.getAttribute('data-cmd');
+      const runBtn = document.getElementById('btn-ctrl-run-pathfinder');
+      if (runBtn) runBtn.click();
+    }
+  });
+});
+
+// Script template presets
+document.querySelectorAll('.script-tmpl-btn[data-tmpl]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tmpl = btn.getAttribute('data-tmpl');
+    const editor = document.getElementById('mc-ctrl-script-text');
+    if (!editor) return;
+    if (tmpl === 'afk') {
+      editor.value = 'chat /afk\ndelay 1000\nlook 0\ndelay 1000\nstartmove forward\ndelay 400\nstopmove forward';
+    } else if (tmpl === 'deposit') {
+      editor.value = 'chat /ec\ndelay 1200\nwinclick 9 0 1\ndelay 300\nwinclick 10 0 1\ndelay 300\nclosewindow';
+    } else if (tmpl === 'home') {
+      editor.value = 'chat /home 1\ndelay 2000\nlook 0';
+    } else if (tmpl === 'clear') {
+      editor.value = '';
+    }
+    editor.focus();
+  });
+});
+
+// KillAura UI State Synchronizer
+const kaToggle = document.getElementById('mc-ctrl-killaura-toggle');
+if (kaToggle) {
+  const syncKAUI = () => {
+    const badge = document.getElementById('ka-status-badge');
+    const housing = document.getElementById('ka-master-housing');
+    const subtoggles = document.getElementById('ka-subtoggles-wrap');
+    if (kaToggle.checked) {
+      if (badge) { badge.textContent = 'Armed'; badge.className = 'badge red'; }
+      housing?.classList.add('active');
+      subtoggles?.classList.remove('dimmed');
+    } else {
+      if (badge) { badge.textContent = 'Standby'; badge.className = 'badge'; }
+      housing?.classList.remove('active');
+      subtoggles?.classList.add('dimmed');
+    }
+  };
+  kaToggle.addEventListener('change', syncKAUI);
+  syncKAUI();
+}
 </script>
 </body>
 </html>

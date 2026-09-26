@@ -988,15 +988,20 @@ function newBot(options) {
   bot.on('messagestr', (msg) => {
     sendEvent(bot._client.username, 'chat', msg)
   })
+  bot.on('playerJoined', (player) => {
+    if (player && player.username) {
+      queueManager.retryPendingForPlayer(player.username)
+    }
+  })
   bot.on('whisper', (username, message) => {
-    const cleanMsg = (message || '').trim().toLowerCase()
+    if (!username || !/^\.?[a-zA-Z0-9_]{3,16}$/.test(username)) return
+    const cleanMsg = (message || '').replace(/[\r\n\0]/g, ' ').trim().toLowerCase()
     if (cleanMsg.includes('claim') || cleanMsg.includes('order')) {
       const retried = queueManager.retryPendingForPlayer(username)
-      if (retried) {
-        bot.chat(`/msg ${username} [Bluxmart] Claim received! Retrying your order delivery now...`)
-      } else {
-        bot.chat(`/msg ${username} [Bluxmart] No pending orders found for ${username}.`)
-      }
+      const reply = retried
+        ? `/msg ${username} [Bluxmart] Claim received! Retrying your order delivery now...`
+        : `/msg ${username} [Bluxmart] No pending orders found for ${username}.`
+      bot.chat(reply.replace(/[\r\n\0]/g, ' ').slice(0, 256))
     }
   })
   bot.on('windowOpen', (window) => {
@@ -1340,6 +1345,7 @@ const queueManager = new DeliveryQueueManager(getPrimaryDeliveryBot, {
 
 let lastSyncTime = null
 let lastSyncError = null
+let isSyncingWithCloud = false
 const BLUXMART_SITE_URL = (process.env.BLUXMART_SITE_URL || 'https://bluxmart.com').replace(/\/+$/, '')
 const SYNC_SECRET = String(process.env.WISP_BOT_SECRET || process.env.WEBHOOK_SECRET || 'bluxmart-wisp-secret-2026').trim()
 
@@ -1347,9 +1353,8 @@ function verifyWebhookSecret(candidate) {
   if (!SYNC_SECRET || SYNC_SECRET.length < 16 || !candidate || typeof candidate !== 'string') {
     return false
   }
-  const a = Buffer.from(candidate.trim(), 'utf8')
-  const b = Buffer.from(SYNC_SECRET, 'utf8')
-  if (a.length !== b.length) return false
+  const a = crypto.createHash('sha256').update(candidate.trim(), 'utf8').digest()
+  const b = crypto.createHash('sha256').update(SYNC_SECRET, 'utf8').digest()
   return crypto.timingSafeEqual(a, b)
 }
 
@@ -1357,8 +1362,10 @@ async function reportStatusToBluxmart(order) {
   try {
     const orderId = order.orderId || order.id
     if (!orderId) return
-    await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
+    const botUsername = getPrimaryDeliveryBot()?._client?.username || getPrimaryDeliveryBot()?.username || 'bot'
+    const res = await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
       method: 'POST',
+      signal: AbortSignal.timeout(8000),
       headers: {
         'User-Agent': 'Bluxmart-AutoDelivery/1.0',
         'Content-Type': 'application/json',
@@ -1371,15 +1378,24 @@ async function reportStatusToBluxmart(order) {
         status: order.status,
         moneyDelivered: Boolean(order.moneyDelivered),
         itemsDelivered: Boolean(order.itemsDelivered),
-        chatMessage: order.lastChatMessage || (order.status === 'completed' ? `Delivered by TrafficerMC bot (${getPrimaryDeliveryBot()?._client?.username || 'bot'})` : undefined)
+        lastError: order.lastError || null,
+        attempts: Number(order.attempts || 0),
+        timestamp: new Date().toISOString(),
+        botUsername,
+        chatMessage: order.lastChatMessage || (order.status === 'completed' ? `Delivered by TrafficerMC bot (${botUsername})` : undefined)
       })
     })
+    if (!res.ok) {
+      console.warn(`[SYNC] reportStatusToBluxmart returned HTTP ${res.status} for Order #${orderId}`)
+    }
   } catch (err) {
     console.error('[SYNC] Failed to report status to Bluxmart:', err.message)
   }
 }
 
 async function syncWithBluxmartCloud() {
+  if (isSyncingWithCloud) return
+  isSyncingWithCloud = true
   try {
     const primaryBot = getPrimaryDeliveryBot()
     const botUser = primaryBot?._client?.username || primaryBot?.username || 'bot'
@@ -1390,6 +1406,7 @@ async function syncWithBluxmartCloud() {
 
     const res = await fetch(url.toString(), {
       method: 'GET',
+      signal: AbortSignal.timeout(8000),
       headers: {
         'User-Agent': 'Bluxmart-AutoDelivery/1.0',
         'Authorization': `Bearer ${SYNC_SECRET}`,
@@ -1408,6 +1425,8 @@ async function syncWithBluxmartCloud() {
         const recipient = String(cloudOrder.minecraftUsername || cloudOrder.recipient || '').trim()
         if (!orderId || !recipient) continue
 
+        if (queueManager.completedOrderIds?.has(orderId)) continue
+
         const exists = queueManager.queue.find((q) => (q.orderId || q.id) === orderId)
         if (!exists) {
           notify('Bluxmart Order', `New order for ${recipient}`, 'success')
@@ -1419,11 +1438,15 @@ async function syncWithBluxmartCloud() {
             elytras: Number(cloudOrder.elytras || 0),
             otherItemsCount: Number(cloudOrder.otherItemsCount || 0),
             hasNonMoneyItems: Boolean(cloudOrder.hasNonMoneyItems),
-            itemsSummary: cloudOrder.itemsSummary || ''
+            itemsSummary: cloudOrder.itemsSummary || '',
+            moneyDelivered: Boolean(cloudOrder.moneyDelivered),
+            itemsDelivered: Boolean(cloudOrder.itemsDelivered)
           })
-          const queued = result.order || result
-          await reportStatusToBluxmart({ orderId, status: 'processing' })
-          await notifyDiscordOrder(queued)
+          if (result.status !== 'tombstoned' && result.status !== 'already_queued') {
+            const queued = result.order || result
+            await reportStatusToBluxmart({ orderId, status: 'processing' })
+            await notifyDiscordOrder(queued)
+          }
         }
       }
     }
@@ -1433,6 +1456,7 @@ async function syncWithBluxmartCloud() {
     if (storedReviews.length > 0 && Math.random() < 0.25) {
       await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
         method: 'POST',
+        signal: AbortSignal.timeout(8000),
         headers: {
           'User-Agent': 'Bluxmart-AutoDelivery/1.0',
           'Content-Type': 'application/json',
@@ -1447,6 +1471,8 @@ async function syncWithBluxmartCloud() {
     }
   } catch (err) {
     lastSyncError = err.message
+  } finally {
+    isSyncingWithCloud = false
   }
 }
 
@@ -1625,7 +1651,7 @@ const handleHttpRequest = async (req, res) => {
       return sendJson(res, 503, { error: 'No admin credentials configured.' })
     }
     const userOk = crypto_tsafeEqual(username, creds.username) || username.toLowerCase() === 'admin'
-    const passOk = verifyPassword(password, creds.passHash) || password === 'admin123456' || password === 'bluxmart2026!'
+    const passOk = verifyPassword(password, creds.passHash)
     if (!userOk || !passOk) {
       limiter.recordFailure(key)
       await delay(600)
@@ -1712,6 +1738,10 @@ const handleHttpRequest = async (req, res) => {
     const money = Number(body?.moneyAmount ?? body?.money ?? 0)
     const spawners = Number(body?.spawners || 0)
     const elytras = Number(body?.elytras || 0)
+    const otherItemsCount = Number(body?.otherItemsCount || 0)
+    const hasNonMoneyItems =
+      Boolean(body?.hasNonMoneyItems) || spawners > 0 || elytras > 0 || otherItemsCount > 0
+    const itemsSummary = String(body?.itemsSummary || '')
 
     if (!recipient || !/^\.?[a-zA-Z0-9_]{3,16}$/.test(recipient)) {
       return sendJson(res, 400, { error: 'Missing or invalid Minecraft recipient username (3-16 alphanumeric characters only)' })
@@ -1721,7 +1751,12 @@ const handleHttpRequest = async (req, res) => {
       minecraftUsername: recipient,
       moneyAmount: money,
       spawners,
-      elytras
+      elytras,
+      otherItemsCount,
+      hasNonMoneyItems,
+      itemsSummary,
+      moneyDelivered: Boolean(body?.moneyDelivered),
+      itemsDelivered: Boolean(body?.itemsDelivered)
     })
     const order = result.order || result
     await notifyDiscordOrder(order)
@@ -1787,6 +1822,7 @@ const handleHttpRequest = async (req, res) => {
 
   // Real-Time Events (SSE)
   if (req.method === 'GET' && (pathname === '/api/ipc/events' || pathname === '/api/events')) {
+    if (!session) return sendJson(res, 401, { error: 'Not authenticated' })
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -1853,20 +1889,30 @@ const handleHttpRequest = async (req, res) => {
       const idx = queueManager.queue.findIndex((o) => (o.id === id || o.orderId === id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
       if (action === 'retry') {
-        queueManager.queue[idx].status = 'queued'
+        queueManager.queue[idx].status = 'pending'
+        queueManager.queue[idx].attempts = 0
+        queueManager.queue[idx].nextAttemptAt = 0
+        queueManager.queue[idx].lastError = null
         queueManager.queue[idx].error = null
+        queueManager.queue[idx].updatedAt = Date.now()
         queueManager.saveQueue()
         queueManager.processNext()
-        broadcastToRenderer('delivery_status', id, queueManager.queue[idx].recipient, 'queued')
+        broadcastToRenderer('delivery_status', id, queueManager.queue[idx].recipient, 'pending')
       } else if (action === 'complete') {
+        const targetOrderId = queueManager.queue[idx].orderId || queueManager.queue[idx].id || id
         queueManager.queue[idx].status = 'completed'
+        queueManager.markOrderTombstoned(targetOrderId)
         queueManager.saveQueue()
         reportStatusToBluxmart(queueManager.queue[idx])
         notifyDiscordOrder(queueManager.queue[idx])
         broadcastToRenderer('delivery_status', id, queueManager.queue[idx].recipient, 'completed')
       } else if (action === 'delete') {
+        const removed = queueManager.queue[idx]
+        const targetOrderId = removed?.orderId || removed?.id || id
+        queueManager.markOrderTombstoned(targetOrderId)
         queueManager.queue.splice(idx, 1)
         queueManager.saveQueue()
+        await reportStatusToBluxmart({ orderId: targetOrderId, status: 'cancelled' })
       } else {
         return sendJson(res, 400, { error: `Unknown order action: ${action}` })
       }
@@ -1877,11 +1923,15 @@ const handleHttpRequest = async (req, res) => {
       const body = await readJsonBody(req)
       const idx = queueManager.queue.findIndex((o) => (o.id === body.id || o.orderId === body.id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
-      queueManager.queue[idx].status = 'queued'
+      queueManager.queue[idx].status = 'pending'
+      queueManager.queue[idx].attempts = 0
+      queueManager.queue[idx].nextAttemptAt = 0
+      queueManager.queue[idx].lastError = null
       queueManager.queue[idx].error = null
+      queueManager.queue[idx].updatedAt = Date.now()
       queueManager.saveQueue()
       queueManager.processNext()
-      broadcastToRenderer('delivery_status', body.id, queueManager.queue[idx].recipient, 'queued')
+      broadcastToRenderer('delivery_status', body.id, queueManager.queue[idx].recipient, 'pending')
       return sendJson(res, 200, { ok: true, queue: queueManager.queue })
     }
 
@@ -1889,7 +1939,9 @@ const handleHttpRequest = async (req, res) => {
       const body = await readJsonBody(req)
       const idx = queueManager.queue.findIndex((o) => (o.id === body.id || o.orderId === body.id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
+      const targetOrderId = queueManager.queue[idx].orderId || queueManager.queue[idx].id || body.id
       queueManager.queue[idx].status = 'completed'
+      queueManager.markOrderTombstoned(targetOrderId)
       queueManager.saveQueue()
       reportStatusToBluxmart(queueManager.queue[idx])
       notifyDiscordOrder(queueManager.queue[idx])
@@ -1901,8 +1953,12 @@ const handleHttpRequest = async (req, res) => {
       const body = await readJsonBody(req)
       const idx = queueManager.queue.findIndex((o) => (o.id === body.id || o.orderId === body.id))
       if (idx === -1) return sendJson(res, 404, { error: 'Order not found' })
+      const removed = queueManager.queue[idx]
+      const targetOrderId = removed?.orderId || removed?.id || body.id
+      queueManager.markOrderTombstoned(targetOrderId)
       queueManager.queue.splice(idx, 1)
       queueManager.saveQueue()
+      await reportStatusToBluxmart({ orderId: targetOrderId, status: 'cancelled' })
       return sendJson(res, 200, { ok: true, queue: queueManager.queue })
     }
 
