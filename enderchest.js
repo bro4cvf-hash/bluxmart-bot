@@ -282,38 +282,24 @@ export const lookSmoothlyAt = smoothLookAt
  */
 export async function closeContainer(bot) {
   if (!bot) return
-
-  // 1. If Mineflayer tracks an open window, close it cleanly
-  if (bot.currentWindow) {
+  const win = bot.currentWindow
+  if (win) {
     try {
-      bot.closeWindow(bot.currentWindow)
+      bot.closeWindow(win)
     } catch {}
     await delay(150)
   }
-
-  // 2. Explicitly send close container packet (close_window) to server.
-  // Modern Spigot/Paper checks: if (this.player.containerMenu.containerId == packet.containerId())
-  // If the server-side container menu was assigned an ID (e.g. 1, 2, 3) or client state desynced,
-  // sending packet for tracked ID, recent window ID, common IDs, and 0 ensures server-side containerMenu
-  // is unconditionally reset to inventoryMenu.
   if (typeof bot._client?.write === 'function') {
-    const idsToClose = new Set()
-    if (bot.currentWindow?.id != null) idsToClose.add(bot.currentWindow.id)
-    if (bot._lastOpenedWindowId != null) idsToClose.add(bot._lastOpenedWindowId)
-    idsToClose.add(1)
-    idsToClose.add(2)
-    idsToClose.add(3)
-    idsToClose.add(0)
-
-    for (const winId of idsToClose) {
+    const winId = win?.id ?? bot._lastOpenedWindowId
+    if (winId != null && winId !== 0) {
       try {
         bot._client.write('close_window', { windowId: winId })
       } catch {}
+      bot._lastOpenedWindowId = null
     }
-    await delay(100)
   }
-
   bot.currentWindow = null
+  await delay(100)
 }
 
 /**
@@ -392,21 +378,16 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   await closeContainer(bot)
   await delay(200)
 
-  // Ensure controls & sneak are released locally and via entity_action packet
-  if (typeof bot.clearControlStates === 'function') {
-    bot.clearControlStates()
-  }
-  if (typeof bot._client?.write === 'function' && bot.entity?.id) {
-    try {
-      bot._client.write('entity_action', {
-        entityId: bot.entity.id,
-        actionId: 1, // stop sneaking
-        jumpBoost: 0
-      })
-    } catch {}
+  // 1. DonutSMP / server check for /ec:
+  // DonutSMP does NOT support /ec.
+  if (
+    bot._client?.host?.toLowerCase?.().includes('donutsmp') ||
+    bot._serverHost?.toLowerCase?.().includes('donutsmp') ||
+    bot._ecCommandSupported === false
+  ) {
+    bot._ecCommandSupported = false
   }
 
-  // Strategy 1: Try /ec command (DonutSMP default - opens Ender Chest GUI instantly without physical block/lid obstacles)
   const tryOpenViaCommand = async (cmdTimeout = 2500) => {
     if (bot._ecCommandSupported === false) return null
 
@@ -422,15 +403,17 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
         bot.once('windowOpen', winHandler)
         cleanups.push(() => bot.removeListener('windowOpen', winHandler))
 
-        const chatHandler = (message) => {
+        const checkError = (message) => {
           const text = typeof message === 'string' ? message : (message?.toString?.() || '')
           if (/This command does not exist|Unknown command|Unknown or incomplete command|do not have permission/i.test(text)) {
             bot._ecCommandSupported = false
             resolve(null)
           }
         }
-        bot.on('message', chatHandler)
-        cleanups.push(() => bot.removeListener('message', chatHandler))
+        bot.on('message', checkError)
+        cleanups.push(() => bot.removeListener('message', checkError))
+        bot.on('messagestr', checkError)
+        cleanups.push(() => bot.removeListener('messagestr', checkError))
       })
 
       if (typeof bot.chat === 'function') {
@@ -451,150 +434,191 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
     }
   }
 
-  const cmdWin = bot._ecCommandSupported === false ? null : await tryOpenViaCommand(2000)
-  if (cmdWin) return cmdWin
+  // If ecBlock (physical Ender Chest block) is already found, ALWAYS prefer opening ecBlock physically.
+  // Do NOT send /ec if ecBlock is present and valid!
+  if (!ecBlock && bot._ecCommandSupported !== false) {
+    const cmdWin = await tryOpenViaCommand(2000)
+    if (cmdWin) return cmdWin
+  }
 
   // Strategy 2: Physical block interaction
   if (!ecBlock) {
     throw new Error('Ender Chest block missing for physical interaction')
   }
 
-  const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
-
-  // 1. Move within comfortable reach (<= 2.6m) if needed
-  if (bot.entity?.position) {
-    const dist = bot.entity.position.distanceTo(chestCenter)
-    if (dist > 2.6 && typeof bot.setControlState === 'function') {
-      if (typeof bot.lookAt === 'function') {
-        try {
-          await Promise.race([bot.lookAt(chestCenter, false), delay(200)])
-        } catch {
-          try { await bot.lookAt(chestCenter, true) } catch {}
+  // 2. Positioning and Distance:
+  if (bot.entity?.position && ecBlock.position) {
+    const dist = bot.entity.position.distanceTo(ecBlock.position)
+    if (dist < 0.9 || dist > 3.8 || bot.entity.position.y >= ecBlock.position.y + 0.8) {
+      if (bot.entity.position.y >= ecBlock.position.y + 0.8 || dist < 0.9) {
+        // If bot is standing on top of the chest, step back slightly to an adjacent block so line of sight and raycast are clean
+        if (typeof bot.setControlState === 'function') {
+          bot.setControlState('back', true)
+          await delay(250)
+          bot.setControlState('back', false)
+          await delay(100)
+        }
+      } else if (dist > 3.8) {
+        const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
+        if (typeof bot.lookAt === 'function') {
+          try {
+            await Promise.race([bot.lookAt(chestCenter, false), delay(200)])
+          } catch {
+            try { await bot.lookAt(chestCenter, true) } catch {}
+          }
+        }
+        if (typeof bot.setControlState === 'function') {
+          bot.setControlState('forward', true)
+          await delay(Math.min(400, Math.max(100, Math.floor((dist - 2.5) * 200))))
+          bot.setControlState('forward', false)
+          await delay(120)
         }
       }
-      bot.setControlState('forward', true)
-      await delay(Math.min(350, Math.max(100, Math.floor((dist - 2.0) * 200))))
-      bot.setControlState('forward', false)
-      await delay(120)
     }
   }
 
-  // 2. Select an empty hotbar slot if available so hand is empty (prevents accidental block placing/eating)
-  if (bot.inventory && typeof bot.setQuickBarSlot === 'function') {
+  // Ensure sneak is false:
+  bot.setControlState('sneak', false)
+  if (typeof bot.clearControlStates === 'function') bot.clearControlStates()
+  if (typeof bot._client?.write === 'function' && bot.entity?.id) {
+    try {
+      bot._client.write('entity_action', {
+        entityId: bot.entity.id,
+        actionId: 1, // stop sneaking
+        jumpBoost: 0
+      })
+    } catch {}
+  }
+
+  // Ensure held hand is NOT holding a placeable block (especially 'ender_chest'):
+  // Find an empty hotbar slot (!bot.inventory?.slots?.[36 + slot]) and call bot.setQuickBarSlot(emptySlot).
+  // If no empty slot, select a tool or non-placeable item.
+  if (bot.inventory?.slots && typeof bot.setQuickBarSlot === 'function') {
     const emptySlot = [0, 1, 2, 3, 4, 5, 6, 7, 8].find(
-      (slot) => !bot.inventory.slots[bot.inventory.hotbarStart + slot]
+      (slot) => !bot.inventory.slots[36 + slot]
     )
     if (emptySlot !== undefined) {
       bot.setQuickBarSlot(emptySlot)
       await delay(50)
-    }
-  }
-
-  // 3. Acquire best target point on the chest (lid or face)
-  let targetPoint = null
-  try {
-    targetPoint = await acquireEnderChestTarget(bot, ecBlock)
-  } catch {}
-  if (!targetPoint) {
-    targetPoint = ecBlock.position.offset(0.5, 0.88, 0.5)
-  }
-
-  // Determine direction & cursor position
-  let direction = new Vec3(0, 1, 0)
-  const relY = targetPoint.y - ecBlock.position.y
-  const relX = targetPoint.x - ecBlock.position.x
-  const relZ = targetPoint.z - ecBlock.position.z
-
-  if (relY >= 0.7) {
-    direction = new Vec3(0, 1, 0) // Up / top lid
-  } else if (relZ <= 0.2) {
-    direction = new Vec3(0, 0, -1) // North
-  } else if (relZ >= 0.8) {
-    direction = new Vec3(0, 0, 1) // South
-  } else if (relX <= 0.2) {
-    direction = new Vec3(-1, 0, 0) // West
-  } else if (relX >= 0.8) {
-    direction = new Vec3(1, 0, 0) // East
-  }
-  const cursorPos = new Vec3(
-    Math.max(0.1, Math.min(0.9, relX)),
-    Math.max(0.1, Math.min(0.9, relY)),
-    Math.max(0.1, Math.min(0.9, relZ))
-  )
-
-  // 4. Look directly at the Ender Chest before right clicking
-  if (typeof smoothLookAt === 'function') {
-    await smoothLookAt(bot, targetPoint)
-  }
-  if (typeof bot.lookAt === 'function') {
-    try {
-      await Promise.race([
-        bot.lookAt(targetPoint, false),
-        delay(300)
-      ])
-    } catch {
-      try { await bot.lookAt(targetPoint, true) } catch {}
-    }
-  }
-  await delay(180)
-
-  // 5. Primary attempt: open container
-  const attemptTimeout = Math.max(3000, Math.floor(timeoutMs / 2))
-  try {
-    await closeContainer(bot)
-    await delay(150)
-    let timer
-    return await Promise.race([
-      bot.openContainer(ecBlock, direction, cursorPos),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Initial openContainer timed out')), attemptTimeout)
+    } else {
+      const nonPlaceableSlot = [0, 1, 2, 3, 4, 5, 6, 7, 8].find((slot) => {
+        const item = bot.inventory.slots[36 + slot]
+        if (!item) return true
+        const name = (item.name || '').toLowerCase()
+        const isTool =
+          name.includes('sword') ||
+          name.includes('pickaxe') ||
+          name.includes('axe') ||
+          name.includes('shovel') ||
+          name.includes('hoe') ||
+          name.includes('shears') ||
+          name.includes('elytra') ||
+          name.includes('compass') ||
+          name.includes('clock')
+        const isPlaceable =
+          name.includes('chest') ||
+          name.includes('box') ||
+          name.includes('shulker') ||
+          name.includes('block') ||
+          name.includes('stone') ||
+          name.includes('dirt') ||
+          name.includes('wood') ||
+          name.includes('plank') ||
+          name.includes('spawner')
+        return isTool || !isPlaceable
       })
-    ]).finally(() => {
-      if (timer) clearTimeout(timer)
-    })
-  } catch (err) {
-    // 6. Fallback retry: check /ec command again or re-orient directly at center
-    await closeContainer(bot)
-    await delay(200)
-
-    const cmdWinRetry = bot._ecCommandSupported !== false ? await tryOpenViaCommand(2000) : null
-    if (cmdWinRetry) return cmdWinRetry
-
-    const retryTarget = ecBlock.position.offset(0.5, 0.5, 0.5)
-    if (typeof smoothLookAt === 'function') {
-      await smoothLookAt(bot, retryTarget)
-    }
-    if (typeof bot.lookAt === 'function') {
-      try {
-        await Promise.race([
-          bot.lookAt(retryTarget, false),
-          delay(300)
-        ])
-      } catch {
-        try { await bot.lookAt(retryTarget, true) } catch {}
+      if (nonPlaceableSlot !== undefined) {
+        bot.setQuickBarSlot(nonPlaceableSlot)
+        await delay(50)
       }
     }
-    await delay(180)
+  }
 
-    let fallbackTimer
-    await closeContainer(bot)
-    await delay(150)
-    return await Promise.race([
-      bot.openContainer(ecBlock, new Vec3(0, 1, 0), new Vec3(0.5, 0.5, 0.5)),
+  // 3. Face & Raycast Alignment (Critical for GrimAC anti-cheat on DonutSMP):
+  // Calculate which face the bot is facing:
+  const eye = bot.entity.position.offset(0, 1.62, 0)
+  const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
+  const diff = eye.minus(chestCenter)
+
+  let direction = new Vec3(0, 1, 0)
+  let cursorPos = new Vec3(0.5, 0.5, 0.5)
+  let targetLook = chestCenter.clone()
+
+  if (diff.y > 0.8 && Math.abs(diff.x) < 0.6 && Math.abs(diff.z) < 0.6) {
+    // Directly above
+    direction = new Vec3(0, 1, 0)
+    cursorPos = new Vec3(0.5, 1.0, 0.5)
+    targetLook = ecBlock.position.offset(0.5, 1.0, 0.5)
+  } else if (Math.abs(diff.x) > Math.abs(diff.z)) {
+    if (diff.x > 0) {
+      direction = new Vec3(1, 0, 0) // East face
+      cursorPos = new Vec3(1.0, 0.5, 0.5)
+      targetLook = ecBlock.position.offset(1.0, 0.5, 0.5)
+    } else {
+      direction = new Vec3(-1, 0, 0) // West face
+      cursorPos = new Vec3(0.0, 0.5, 0.5)
+      targetLook = ecBlock.position.offset(0.0, 0.5, 0.5)
+    }
+  } else {
+    if (diff.z > 0) {
+      direction = new Vec3(0, 0, 1) // South face
+      cursorPos = new Vec3(0.5, 0.5, 1.0)
+      targetLook = ecBlock.position.offset(0.5, 0.5, 1.0)
+    } else {
+      direction = new Vec3(0, 0, -1) // North face
+      cursorPos = new Vec3(0.5, 0.5, 0.0)
+      targetLook = ecBlock.position.offset(0.5, 0.5, 0.0)
+    }
+  }
+
+  // Look at targetLook with force = false:
+  await bot.lookAt(targetLook, false)
+  // Wait 100ms for orientation packets to sync:
+  await delay(100)
+
+  // Open container:
+  const attemptTimeout = Math.max(3000, Math.floor(timeoutMs / 2))
+  let timer
+  try {
+    const win = await Promise.race([
+      bot.openContainer(ecBlock, direction, cursorPos),
       new Promise((_, reject) => {
-        fallbackTimer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `Timed out waiting for Ender Chest container window to open (${Math.round(timeoutMs / 1000)}s)`
-              )
-            ),
+        timer = setTimeout(
+          () => reject(new Error(`Timed out waiting for Ender Chest container window to open (${timeoutMs / 1000}s)`)),
           attemptTimeout
         )
       })
-    ]).finally(() => {
+    ])
+    if (win?.id != null) bot._lastOpenedWindowId = win.id
+    return win
+  } catch (err) {
+    // In fallback retry:
+    // Also look at targetLook, wait 100ms, and retry.
+    try {
+      await bot.lookAt(targetLook, false)
+    } catch {
+      try { await bot.lookAt(targetLook, true) } catch {}
+    }
+    await delay(100)
+
+    let fallbackTimer
+    try {
+      const winRetry = await Promise.race([
+        bot.openContainer(ecBlock, direction, cursorPos),
+        new Promise((_, reject) => {
+          fallbackTimer = setTimeout(
+            () => reject(new Error(`Timed out waiting for Ender Chest container window to open (${timeoutMs / 1000}s)`)),
+            attemptTimeout
+          )
+        })
+      ])
+      if (winRetry?.id != null) bot._lastOpenedWindowId = winRetry.id
+      return winRetry
+    } finally {
       if (fallbackTimer) clearTimeout(fallbackTimer)
-    })
+    }
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 

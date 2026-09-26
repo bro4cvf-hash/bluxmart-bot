@@ -893,6 +893,7 @@ export class DeliveryQueueManager {
       await closeContainer(bot)
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
       // Step 2b: Ensure bot inventory starts clean (deposit any leftover items into Ender Chest)
+      if (bot) bot._ecCommandSupported = false
       console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before opening Ender Chest...`)
       await closeContainer(bot)
       await delay(250)
@@ -903,6 +904,7 @@ export class DeliveryQueueManager {
       order.currentStep = 'withdraw'
       await this.notifyUpdate(order, { currentStep: 'withdraw' })
       if (order.spawners > 0 || order.elytras > 0) {
+        if (bot) bot._ecCommandSupported = false
         console.log(`[DELIVERY] [${order.orderId}] Ensuring GUI is closed before Ender Chest withdrawal...`)
         await closeContainer(bot)
         await delay(250)
@@ -923,6 +925,7 @@ export class DeliveryQueueManager {
       }
 
       console.log(`[DELIVERY] [${order.orderId}] Items withdrawn from Ender Chest. Closing GUI before sending teleport...`)
+      this.log(`[DELIVERY] [${order.orderId}] Items withdrawn from Ender Chest. Closing GUI before sending teleport...`)
       await closeContainer(bot)
       await delay(400)
 
@@ -971,6 +974,7 @@ export class DeliveryQueueManager {
         this.saveQueue()
         this.log(`[DELIVERY] [${order.orderId}] Step 2d: Sending /tpa ${username}...`)
         await closeContainer(bot)
+        await delay(150)
         safeChat(bot, `/tpa ${username}`)
         await this.notifyUpdate(order, {
           currentStep: 'sent_tpa',

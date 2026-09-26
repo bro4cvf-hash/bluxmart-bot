@@ -16,7 +16,7 @@ function cleanupTestFiles() {
 }
 cleanupTestFiles()
 
-async function waitForIdle(manager, timeoutMs = 15000) {
+async function waitForIdle(manager, timeoutMs = 25000) {
   const start = Date.now()
   await new Promise((r) => setTimeout(r, 150))
   while (manager.processing) {
@@ -426,7 +426,7 @@ async function runTests() {
     elytras: 0
   })
 
-  await waitForIdle(chatTestManager, 15000)
+  await waitForIdle(chatTestManager, 25000)
 
   const offlineOrder = chatTestManager.queue.find((o) => o.orderId === 'ord_chat_offline')
   assert.equal(offlineOrder.status, 'waiting_for_player', 'Order should transition to waiting_for_player on chat offline detection')
