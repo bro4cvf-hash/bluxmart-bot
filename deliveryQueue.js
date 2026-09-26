@@ -798,17 +798,18 @@ export class DeliveryQueueManager {
       this.saveQueue()
       await this.notifyUpdate(order)
 
-      this.log(`[DELIVERY] [${order.orderId}] Step 2: Preparing base & Ender Chest...`)
-
-      // Step 2a: Ensure any open window is closed (enderchest.js handles finding and placing the chest)
+      // Step 2a: Ensure bot returns to base (/home 1) and any open window is closed
       order.currentStep = 'ec_prep'
       await this.notifyUpdate(order, { currentStep: 'ec_prep' })
       if (bot.currentWindow) {
-        try { bot.closeWindow(bot.currentWindow) } catch {}
+        try {
+          bot.closeWindow(bot.currentWindow)
+        } catch {}
         await delay(200)
       }
+      this.log(`[DELIVERY] [${order.orderId}] Step 2a: Returning to /home 1 before Ender Chest interaction...`)
+      await this.returnToBaseSafely(bot, null, 8000)
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
-
       // Step 2b: Ensure bot inventory starts clean (deposit any leftover items into Ender Chest)
       this.log(`[DELIVERY] [${order.orderId}] Step 2b: Clearing stray inventory into Ender Chest...`)
       await sanitizeBotInventory(bot, { spawners: 0, elytras: 0 })

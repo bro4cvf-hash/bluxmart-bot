@@ -57,6 +57,8 @@ function createMockBot(opts = {}) {
       }
     },
     entities: opts.entities || {},
+    closeWindow: (win) => {},
+    clickWindow: async (slot, mouseButton, mode) => {},
     on: (evt, fn) => emitter.on(evt, fn),
     removeListener: (evt, fn) => emitter.removeListener(evt, fn),
     off: (evt, fn) => emitter.off(evt, fn),
@@ -424,7 +426,7 @@ async function runTests() {
     elytras: 0
   })
 
-  await waitForIdle(chatTestManager, 10000)
+  await waitForIdle(chatTestManager, 15000)
 
   const offlineOrder = chatTestManager.queue.find((o) => o.orderId === 'ord_chat_offline')
   assert.equal(offlineOrder.status, 'waiting_for_player', 'Order should transition to waiting_for_player on chat offline detection')

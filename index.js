@@ -2507,7 +2507,7 @@ for (const listenPort of candidatePorts) {
 process.on('uncaughtException', (err) => {
   console.log(err)
 })
-process.on('UnhandledPromiseRejectionWarning', (err) => {
-  console.log(err)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] Unhandled Rejection:', reason)
 })
 

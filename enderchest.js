@@ -323,8 +323,10 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
   if (!bot || !ecBlock) throw new Error('Bot or Ender Chest block missing')
 
   if (bot.currentWindow) {
-    try { bot.closeWindow(bot.currentWindow) } catch {}
-    await delay(200)
+    try {
+      bot.closeWindow(bot.currentWindow)
+    } catch {}
+    await delay(150)
   }
 
   const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
@@ -339,60 +341,58 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
       bot.setControlState('forward', true)
       await delay(Math.min(400, Math.floor((dist - 2.0) * 200)))
       bot.setControlState('forward', false)
+      await delay(100)
+    }
+  }
+
+  // 2. Look directly at chest center
+  if (typeof bot.lookAt === 'function') {
+    await bot.lookAt(chestCenter, true)
+    await delay(150)
+  }
+
+  // 3. Primary attempt: standard vanilla bot.openContainer(ecBlock)
+  const attemptTimeout = Math.max(3000, Math.floor(timeoutMs / 2))
+  try {
+    let timer
+    return await Promise.race([
+      bot.openContainer(ecBlock),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Initial openContainer timed out')), attemptTimeout)
+      })
+    ]).finally(() => {
+      if (timer) clearTimeout(timer)
+    })
+  } catch (err) {
+    // 4. Fallback retry: re-orient, clear window state, and retry
+    if (bot.currentWindow) {
+      try {
+        bot.closeWindow(bot.currentWindow)
+      } catch {}
+      await delay(100)
+    }
+    if (typeof bot.lookAt === 'function') {
+      await bot.lookAt(chestCenter, true)
       await delay(150)
     }
-  }
 
-  // 2. Determine best face to click based on bot's relative position
-  let faceVec = new Vec3(0, 1, 0)
-  if (bot.entity?.position) {
-    const diff = bot.entity.position.minus(chestCenter)
-    if (Math.abs(diff.x) > Math.abs(diff.z)) {
-      faceVec = diff.x > 0 ? new Vec3(1, 0, 0) : new Vec3(-1, 0, 0)
-    } else {
-      faceVec = diff.z > 0 ? new Vec3(0, 0, 1) : new Vec3(0, 0, -1)
-    }
-  }
-
-  const faceTarget = chestCenter.plus(faceVec.scaled(0.45))
-
-  // 3. Look directly at the chest face (forced) and wait for rotation sync
-  if (typeof bot.lookAt === 'function') {
-    await bot.lookAt(faceTarget, true)
-    await delay(250)
-  }
-
-  // 4. Try opening via facing side, top face, or fallback
-  const attemptOpen = async (dir) => {
-    return Promise.race([
-      bot.openContainer(ecBlock, dir, new Vec3(0.5, 0.5, 0.5)),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Container open timed out')), Math.floor(timeoutMs / 2))
-      )
-    ])
-  }
-
-  try {
-    return await attemptOpen(faceVec)
-  } catch (err1) {
-    if (typeof bot.lookAt === 'function') {
-      await bot.lookAt(chestCenter.offset(0, 0.45, 0), true)
-      await delay(200)
-    }
-    try {
-      return await attemptOpen(new Vec3(0, 1, 0))
-    } catch (err2) {
-      if (typeof bot.lookAt === 'function') {
-        await bot.lookAt(chestCenter, true)
-        await delay(150)
-      }
-      return await Promise.race([
-        bot.openContainer(ecBlock),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Timed out waiting for Ender Chest container window to open (${Math.round(timeoutMs / 1000)}s)`)), Math.floor(timeoutMs / 2))
+    let fallbackTimer
+    return await Promise.race([
+      bot.openContainer(ecBlock),
+      new Promise((_, reject) => {
+        fallbackTimer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Timed out waiting for Ender Chest container window to open (${Math.round(timeoutMs / 1000)}s)`
+              )
+            ),
+          attemptTimeout
         )
-      ])
-    }
+      })
+    ]).finally(() => {
+      if (fallbackTimer) clearTimeout(fallbackTimer)
+    })
   }
 }
 
