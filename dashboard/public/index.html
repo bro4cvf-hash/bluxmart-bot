@@ -647,6 +647,7 @@
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
                   <strong id="mc-viewer-username" style="font-size:18px;color:#fff">Not Spawned</strong>
                   <span class="badge red" id="mc-viewer-state-badge">Offline</span>
+                  <span class="badge green" id="mc-viewer-ping-badge" style="display:none">📶 <span id="mc-viewer-ping-txt">-- ms</span></span>
                 </div>
                 <div class="muted" id="mc-viewer-dim-label" style="margin-bottom:8px">Server: donutsmp.net:25565 • Overworld</div>
 
@@ -677,6 +678,8 @@
             </div>
 
             <div class="kv" style="margin-top:12px">
+              <div><small>Server Ping (Latency)</small><code class="mono" id="mc-viewer-ping">— ms</code></div>
+              <div><small>Server Scoreboard</small><code class="mono" id="mc-viewer-scoreboard" title="Live Server Scoreboard">—</code></div>
               <div><small>Position (X, Y, Z)</small><code class="mono" id="mc-viewer-pos">0.0, 64.0, 0.0</code></div>
               <div><small>Rotation (Yaw / Pitch)</small><code class="mono" id="mc-viewer-rot">0.0° / 0.0°</code></div>
               <div><small>Held Item</small><code class="mono" id="mc-viewer-held">Empty Hand</code></div>

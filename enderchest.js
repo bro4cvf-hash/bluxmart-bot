@@ -284,19 +284,27 @@ export async function findOrPlaceEnderChest(bot) {
     await delay(200)
   }
   let ecBlock = bot.findBlock({
-    matching: (block) => block && block.name === 'ender_chest',
+    matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
     maxDistance: 4.5
   })
 
   if (!ecBlock) {
-    await delay(400)
+    await delay(300)
+    ecBlock = bot.findBlock({
+      matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
+      maxDistance: 4.5
+    })
+  }
+
+  // If no clear-lid chest found nearby, fall back to any ender_chest block
+  if (!ecBlock) {
     ecBlock = bot.findBlock({
       matching: (block) => block && block.name === 'ender_chest',
       maxDistance: 4.5
     })
   }
 
-  if (ecBlock) return ecBlock
+  if (ecBlock && !isChestLidBlocked(bot, ecBlock)) return ecBlock
 
   // Check if bot holds an ender_chest item to place
   const ecItem = bot.inventory?.items?.().find((i) => i.name === 'ender_chest')
@@ -339,7 +347,7 @@ export async function findOrPlaceEnderChest(bot) {
 }
 
 export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
-  if (!bot || !ecBlock) throw new Error('Bot or Ender Chest block missing')
+  if (!bot) throw new Error('Bot missing')
 
   if (bot.currentWindow) {
     try {
@@ -348,9 +356,54 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
     await delay(150)
   }
 
-  // Ensure controls & sneak are released
+  // Ensure controls & sneak are released locally and via entity_action packet
   if (typeof bot.clearControlStates === 'function') {
     bot.clearControlStates()
+  }
+  if (typeof bot._client?.write === 'function' && bot.entity?.id) {
+    try {
+      bot._client.write('entity_action', {
+        entityId: bot.entity.id,
+        actionId: 1, // stop sneaking
+        jumpBoost: 0
+      })
+    } catch {}
+  }
+
+  // Strategy 1: Try /ec command (DonutSMP default - opens Ender Chest GUI instantly without physical block/lid obstacles)
+  const tryOpenViaCommand = async (cmdTimeout = 2500) => {
+    let cleanup
+    try {
+      const windowPromise = new Promise((resolve) => {
+        const handler = (win) => {
+          if (win) resolve(win)
+        }
+        bot.once('windowOpen', handler)
+        cleanup = () => bot.removeListener('windowOpen', handler)
+      })
+
+      if (typeof bot.chat === 'function') {
+        bot.chat('/ec')
+      }
+
+      const win = await Promise.race([
+        windowPromise,
+        delay(cmdTimeout).then(() => null)
+      ])
+      return win
+    } catch {
+      return null
+    } finally {
+      if (cleanup) cleanup()
+    }
+  }
+
+  const cmdWin = await tryOpenViaCommand(2000)
+  if (cmdWin) return cmdWin
+
+  // Strategy 2: Physical block interaction
+  if (!ecBlock) {
+    throw new Error('Ender Chest block missing for physical interaction')
   }
 
   const chestCenter = ecBlock.position.offset(0.5, 0.5, 0.5)
@@ -445,13 +498,16 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
       if (timer) clearTimeout(timer)
     })
   } catch (err) {
-    // 6. Fallback retry: re-orient directly at center, clear window state, and retry
+    // 6. Fallback retry: check /ec command again or re-orient directly at center
     if (bot.currentWindow) {
       try {
         bot.closeWindow(bot.currentWindow)
       } catch {}
       await delay(150)
     }
+
+    const cmdWinRetry = await tryOpenViaCommand(2000)
+    if (cmdWinRetry) return cmdWinRetry
 
     const retryTarget = ecBlock.position.offset(0.5, 0.5, 0.5)
     if (typeof smoothLookAt === 'function') {

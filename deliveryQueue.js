@@ -29,11 +29,109 @@ export function safeChat(bot, msg) {
  * Prefix consists of all letters of the username except the last one.
  * Verifies that the tab completion suggestions contain the exact case-insensitive username.
  */
-export async function isPlayerOnline(bot, username, timeoutMs = 3500) {
+export async function isPlayerOnline(bot, username, timeoutMs = 2500) {
   if (!bot || !username) return false
   const target = String(username || '').trim().toLowerCase()
   if (!target) return false
 
+  // Keywords that definitely indicate the user is offline
+  const offlinePatterns = [
+    'that user is not online',
+    'this user is not online',
+    'player not found',
+    'user not found',
+    'user is not online',
+    'could not find player',
+    'no player found',
+    'player is offline',
+    'cannot find player',
+    'nobody with that name'
+  ]
+
+  // Keywords that definitely indicate the user exists and is online
+  const onlinePatterns = [
+    'this user only accepts messages from friends or followed players',
+    'only accepts messages from friends',
+    'only accepts messages from followed',
+    `to ${target}:`,
+    `me -> ${target}`,
+    `you -> ${target}`
+  ]
+
+  // Active /msg probe with chat listener
+  let chatSignal = null
+  let messageListener = null
+
+  const probePromise = new Promise((resolve) => {
+    messageListener = (msg) => {
+      const text = (typeof msg === 'string' ? msg : (msg?.toString?.() || '')).toLowerCase().trim()
+      if (!text) return
+
+      for (const pattern of offlinePatterns) {
+        if (text.includes(pattern)) {
+          chatSignal = false
+          resolve(false)
+          return
+        }
+      }
+
+      for (const pattern of onlinePatterns) {
+        if (text.includes(pattern)) {
+          chatSignal = true
+          resolve(true)
+          return
+        }
+      }
+    }
+
+    if (typeof bot.on === 'function') {
+      bot.on('messagestr', messageListener)
+      bot.on('message', messageListener)
+    }
+
+    try {
+      safeChat(bot, `/msg ${username} t`)
+    } catch {}
+
+    setTimeout(() => {
+      resolve(null)
+    }, Math.min(timeoutMs, 1800))
+  }).finally(() => {
+    if (messageListener && typeof bot.removeListener === 'function') {
+      bot.removeListener('messagestr', messageListener)
+      bot.removeListener('message', messageListener)
+    }
+  })
+
+  // Concurrently run tab completion check
+  const tabPromise = (async () => {
+    if (typeof bot.tabComplete === 'function') {
+      try {
+        const prefix = target.length > 1 ? target.slice(0, -1) : target
+        const matches = await bot.tabComplete(`/tpa ${prefix}`, false, false, Math.min(timeoutMs, 1800))
+        if (Array.isArray(matches) && matches.length > 0) {
+          return matches.some((item) => {
+            const raw = typeof item === 'string' ? item : (item.match || item.name || '')
+            const parts = String(raw).trim().split(/\s+/)
+            const candidate = parts[parts.length - 1].replace(/^[/]/, '').toLowerCase()
+            return candidate === target
+          })
+        }
+      } catch {}
+    }
+    return null
+  })()
+
+  const [probeResult, tabResult] = await Promise.all([probePromise, tabPromise])
+
+  // Chat probe gave a definitive affirmative or negative answer
+  if (probeResult === false) return false
+  if (probeResult === true) return true
+
+  // Tab completion found user
+  if (tabResult === true) return true
+
+  // Fallback to bot.players table
   const checkPlayers = () => {
     const players = bot?.players
     if (!players) return false
@@ -43,30 +141,6 @@ export async function isPlayerOnline(bot, username, timeoutMs = 3500) {
     return false
   }
 
-  // Step A: Instant check via bot.players
-  if (checkPlayers()) return true
-
-  // Step B: Tab completion check
-  if (typeof bot.tabComplete === 'function') {
-    try {
-      const prefix = target.length > 1 ? target.slice(0, -1) : target
-      const tabQuery = `/tpa ${prefix}`
-      const matches = await bot.tabComplete(tabQuery, false, false, timeoutMs)
-      if (Array.isArray(matches) && matches.length > 0) {
-        const found = matches.some((item) => {
-          const raw = typeof item === 'string' ? item : (item.match || item.name || '')
-          const parts = String(raw).trim().split(/\s+/)
-          const candidate = parts[parts.length - 1].replace(/^[/]/, '').toLowerCase()
-          return candidate === target
-        })
-        if (found) return true
-      }
-    } catch (err) {
-      // Tab completion timed out or rejected
-    }
-  }
-
-  // Step C: Final fallback check via bot.players in case tab list updated
   return checkPlayers()
 }
 
@@ -569,12 +643,13 @@ export class DeliveryQueueManager {
             const isOnline = await isPlayerOnline(bot, user)
             if (isOnline) {
               candidate._lastOnlineAt = Date.now()
+              candidate.lastError = null
               nextOrder = candidate
               break
             } else {
               // Defer offline player with backoff without blocking the queue
               candidate.status = 'waiting_for_player'
-              candidate.lastError = `Buyer ${user} is offline (tab suggestion not found)`
+              candidate.lastError = `Buyer ${user} is offline on donutsmp.net`
               candidate.nextAttemptAt = now + 15000
               candidate.updatedAt = now
               this.saveQueue()
@@ -775,12 +850,8 @@ export class DeliveryQueueManager {
       await this.notifyUpdate(order, { currentStep: 'online_check' })
       this.log(`[DELIVERY] [${order.orderId}] Step 1: Checking buyer ${username} online status...`)
 
-      const isDirectlyInPlayers = Boolean(
-        bot.players &&
-        Object.keys(bot.players).some((p) => p.toLowerCase() === username.toLowerCase())
-      )
-      const recentlyChecked = Boolean(order._lastOnlineAt && Date.now() - order._lastOnlineAt < 15000)
-      const isOnline = (isDirectlyInPlayers || recentlyChecked) ? true : await isPlayerOnline(bot, username)
+      // Direct live verification without bypassing
+      const isOnline = await isPlayerOnline(bot, username, 2500)
 
       if (!isOnline) {
         order.status = 'waiting_for_player'
@@ -789,14 +860,19 @@ export class DeliveryQueueManager {
         order.updatedAt = Date.now()
         this.saveQueue()
         this.log(`[DELIVERY] [${order.orderId}] Buyer ${username} is offline on server. Deferring to waiting_for_player.`)
+        await this.notifyUpdate(order, {
+          status: 'waiting_for_player',
+          chatMessage: `⏳ Waiting for ${username} to be online in-game on donutsmp.net to deliver physical items...`
+        })
         return
       }
 
       order.status = 'delivering'
-      order.attempts += 1
+      order.lastError = null // Clear any prior error
+      order.attempts = (order.attempts || 0) + 1
       order.updatedAt = Date.now()
       this.saveQueue()
-      await this.notifyUpdate(order)
+      await this.notifyUpdate(order, { currentStep: 'delivering', status: 'delivering' })
 
       // Step 2a: Ensure bot returns to base (/home 1) and any open window is closed
       order.currentStep = 'ec_prep'

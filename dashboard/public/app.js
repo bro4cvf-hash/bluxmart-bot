@@ -1424,6 +1424,26 @@ function renderBotViewer(viewer) {
     $('mc-viewer-nearby-count').textContent = `${(viewer.nearbyPlayers || []).length} players nearby`;
   }
 
+  // Ping badge & latency display
+  if ($('mc-viewer-ping-badge')) {
+    if (viewer.connected && viewer.ping != null) {
+      $('mc-viewer-ping-badge').style.display = 'inline-flex';
+      if ($('mc-viewer-ping-txt')) $('mc-viewer-ping-txt').textContent = `${viewer.ping}ms`;
+      $('mc-viewer-ping-badge').className = `badge ${viewer.ping < 120 ? 'green' : (viewer.ping < 300 ? 'yellow' : 'red')}`;
+    } else {
+      $('mc-viewer-ping-badge').style.display = 'none';
+    }
+  }
+  if ($('mc-viewer-ping')) {
+    $('mc-viewer-ping').textContent = viewer.ping != null ? `${viewer.ping} ms` : '—';
+  }
+  if ($('mc-viewer-scoreboard')) {
+    const sb = viewer.scoreboard;
+    $('mc-viewer-scoreboard').textContent = Array.isArray(sb) && sb.length > 0
+      ? sb.slice(0, 4).join(' • ')
+      : (typeof sb === 'string' && sb ? sb : '—');
+  }
+
   // Nearby Players list
   const pListEl = $('mc-nearby-players-list');
   if (pListEl) {

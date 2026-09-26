@@ -305,11 +305,30 @@ function getBotViewerSnapshot(bot) {
     count: bot.heldItem.count
   } : null
 
+  const playerPing = bot.player?.ping && bot.player.ping > 0 ? bot.player.ping : null
+  const clientPing = bot.players?.[username]?.ping && bot.players[username].ping > 0 ? bot.players[username].ping : null
+  const ping = playerPing ?? clientPing ?? bot._lastPing ?? null
+
+  let scoreboardLines = []
+  if (bot.scoreboards) {
+    try {
+      const sb = Object.values(bot.scoreboards).find((s) => s.position === 'sidebar' || s.name === 'sidebar') || Object.values(bot.scoreboards)[0]
+      if (sb && sb.itemsMap) {
+        scoreboardLines = Object.values(sb.itemsMap)
+          .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+          .map((item) => (item.displayName?.toString() || item.name || '').replace(/§[0-9a-fk-or]/gi, '').trim())
+          .filter(Boolean)
+      }
+    } catch {}
+  }
+
   return {
     username,
     connected: Boolean(bot.entity),
     host: storeinfo().value.server || 'donutsmp.net:25565',
     version: bot.version || storeinfo().value.version || '1.20.4',
+    ping,
+    scoreboard: scoreboardLines,
     health: Number(bot.health ?? 20),
     food: Number(bot.food ?? 20),
     saturation: Number(bot.foodSaturation ?? 5),
@@ -932,10 +951,10 @@ function newBot(options) {
       place_entity: false,
       rain: false,
       ray_trace: false,
-      scoreboard: false,
+      scoreboard: true,
       sound: false,
       spawn_point: false,
-      tablist: false,
+      tablist: true,
       team: false,
       time: false,
       title: false,
@@ -947,6 +966,15 @@ function newBot(options) {
   })
   allBotInstances.add(bot)
   applySpoof(bot)
+  let lastKeepAliveSent = 0
+  bot._lastPing = null
+  bot._client?.on('keep_alive', () => {
+    if (lastKeepAliveSent > 0) {
+      bot._lastPing = Math.max(1, Date.now() - lastKeepAliveSent)
+    }
+    lastKeepAliveSent = Date.now()
+  })
+
   bot._client.on('connect', () => {
     const socket = bot._client.socket
     socket?.setKeepAlive?.(true, 30000)
