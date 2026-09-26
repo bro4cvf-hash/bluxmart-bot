@@ -179,7 +179,15 @@ export class LoginRateLimiter {
     }
   }
 
+  allow(key: string): boolean {
+    return this.check(key).allowed;
+  }
+
   recordSuccess(key: string): void {
     this.hits.delete(key);
+  }
+
+  reset(key: string): void {
+    this.recordSuccess(key);
   }
 }

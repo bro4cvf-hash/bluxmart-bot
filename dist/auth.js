@@ -168,8 +168,14 @@ class LoginRateLimiter {
             e.blockedUntil = now + this.blockMs;
         }
     }
+    allow(key) {
+        return this.check(key).allowed;
+    }
     recordSuccess(key) {
         this.hits.delete(key);
+    }
+    reset(key) {
+        this.recordSuccess(key);
     }
 }
 exports.LoginRateLimiter = LoginRateLimiter;

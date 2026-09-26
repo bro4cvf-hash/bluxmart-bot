@@ -1719,7 +1719,13 @@ const handleHttpRequest = async (req, res) => {
   // 4. Cloud Auto-Delivery Webhook (External API with Secret Header)
   if (req.method === 'POST' && pathname === '/api/deliver') {
     const ip = clientIp(req)
-    if (!limiter.allow(`webhook:${ip}`)) {
+    const rateCheck = typeof limiter?.check === 'function'
+      ? limiter.check(`webhook:${ip}`)
+      : (typeof limiter?.allow === 'function' ? { allowed: limiter.allow(`webhook:${ip}`) } : { allowed: true })
+    if (!rateCheck.allowed) {
+      if (rateCheck.retryAfterSec) {
+        res.setHeader('Retry-After', String(rateCheck.retryAfterSec))
+      }
       return sendJson(res, 429, { error: 'Too many failed webhook attempts. Try again later.' })
     }
     const authHeader = req.headers['authorization'] || ''
@@ -1728,10 +1734,16 @@ const handleHttpRequest = async (req, res) => {
     const hasValidSecret = verifyWebhookSecret(secret)
     const session = getSession(req)
     if (!hasValidSecret && !session) {
-      limiter.recordFailure(`webhook:${ip}`)
+      if (typeof limiter?.recordFailure === 'function') {
+        limiter.recordFailure(`webhook:${ip}`)
+      }
       return sendJson(res, 401, { error: 'Unauthorized webhook call' })
     }
-    limiter.reset(`webhook:${ip}`)
+    if (typeof limiter?.recordSuccess === 'function') {
+      limiter.recordSuccess(`webhook:${ip}`)
+    } else if (typeof limiter?.reset === 'function') {
+      limiter.reset(`webhook:${ip}`)
+    }
     const body = await readJsonBody(req)
     const orderId = String(body?.orderId || body?.id || `ord_${Date.now()}`).trim()
     const recipient = String(body?.minecraftUsername || body?.recipient || '').trim()
