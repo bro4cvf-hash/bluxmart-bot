@@ -356,7 +356,9 @@ export class DeliveryQueueManager {
       return true
     }
 
-    safeChat(bot, this.safeReturnCommand || '/home 1')
+    let cmd = String(this.safeReturnCommand || '/home 1').trim()
+    if (cmd === '/home') cmd = '/home 1'
+    safeChat(bot, cmd)
     await delay(600)
 
     // On DonutSMP, if sending return command opened a window (e.g. "Homes" GUI):

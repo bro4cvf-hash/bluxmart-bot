@@ -186,7 +186,11 @@ export async function acquireEnderChestTarget(bot, ecBlock) {
     } catch {}
   }
 
-  // 4. Failed safely
+  // 4. Fallback to center point if within reach
+  if (bot.entity && bot.entity.position && bot.entity.position.distanceTo(ecBlock.position) <= 4.5) {
+    return centerPoint
+  }
+
   throw new Error(
     `Cannot establish clear line-of-sight to Ender Chest at ${ecBlock.position} - all target points obstructed.`
   )
@@ -259,6 +263,10 @@ export const lookSmoothlyAt = smoothLookAt
  * @param {import('mineflayer').Bot} bot
  */
 export async function findOrPlaceEnderChest(bot) {
+  if (bot.currentWindow) {
+    try { bot.closeWindow(bot.currentWindow) } catch {}
+    await delay(200)
+  }
   let ecBlock = bot.findBlock({
     matching: (block) => block && block.name === 'ender_chest' && !isChestLidBlocked(bot, block),
     maxDistance: 4.5
@@ -324,6 +332,10 @@ export async function findOrPlaceEnderChest(bot) {
  * @param {{ spawners: number, elytras: number }} needed
  */
 export async function withdrawFromEnderChest(bot, needed) {
+  if (bot.currentWindow) {
+    try { bot.closeWindow(bot.currentWindow) } catch {}
+    await delay(200)
+  }
   const targetSpawners = Math.max(0, Number(needed.spawners) || 0)
   const targetElytras = Math.max(0, Number(needed.elytras) || 0)
 
@@ -417,6 +429,10 @@ export async function withdrawFromEnderChest(bot, needed) {
  * (used if a buyer canceled, went offline, or was in a lava/campfire trap).
  */
 export async function depositBackToEnderChest(bot) {
+  if (bot.currentWindow) {
+    try { bot.closeWindow(bot.currentWindow) } catch {}
+    await delay(200)
+  }
   const spawnersInInv = countInventoryCategory(bot, 'spawner')
   const elytrasInInv = countInventoryCategory(bot, 'elytra')
   if (spawnersInInv === 0 && elytrasInInv === 0) return
