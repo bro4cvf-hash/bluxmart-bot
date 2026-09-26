@@ -33,6 +33,16 @@ function createMockBot(opts = {}) {
   const tossedItems = []
   let pos = opts.initialPos ? opts.initialPos.clone() : new Vec3(0, 64, 0)
 
+  let invItems = opts.inventoryItems
+    ? opts.inventoryItems.map((i) => ({ ...i }))
+    : []
+  let chestItems = opts.containerItems
+    ? opts.containerItems.map((i) => ({ ...i }))
+    : [
+        { name: 'spawner', type: 52, count: 64 },
+        { name: 'elytra', type: 443, count: 10 }
+      ]
+
   return {
     _client: { username: opts.username || 'TrafficerBot' },
     username: opts.username || 'TrafficerBot',
@@ -68,10 +78,7 @@ function createMockBot(opts = {}) {
       return []
     },
     inventory: {
-      items: () => opts.inventoryItems || [
-        { name: 'spawner', type: 52, count: 64 },
-        { name: 'elytra', type: 443, count: 1 }
-      ],
+      items: () => invItems.filter((i) => i.count > 0),
       emptySlotCount: () => (opts.emptySlots !== undefined ? opts.emptySlots : 10)
     },
     chat(msg) {
@@ -100,18 +107,29 @@ function createMockBot(opts = {}) {
     clearControlStates: () => {},
     toss: async (type, metadata, count) => {
       tossedItems.push({ type, count })
+      const invItem = invItems.find((i) => i.type === type)
+      if (invItem) invItem.count = Math.max(0, invItem.count - count)
       if (opts.throwOnToss) {
         throw new Error('Simulated network disconnect during toss')
       }
     },
     findBlock: () => ({ position: new Vec3(1, 64, 1), name: 'ender_chest' }),
     openContainer: async (block, direction, cursorPos) => ({
-      containerItems: () => opts.containerItems || [
-        { name: 'spawner', type: 52, count: 64 },
-        { name: 'elytra', type: 443, count: 1 }
-      ],
-      withdraw: async () => {},
-      deposit: async () => {},
+      containerItems: () => chestItems.filter((i) => i.count > 0),
+      withdraw: async (type, metadata, count) => {
+        const cItem = chestItems.find((i) => i.type === type)
+        if (cItem) cItem.count = Math.max(0, cItem.count - count)
+        const invItem = invItems.find((i) => i.type === type)
+        if (invItem) invItem.count += count
+        else invItems.push({ name: type === 52 ? 'spawner' : 'elytra', type, count })
+      },
+      deposit: async (type, metadata, count) => {
+        const invItem = invItems.find((i) => i.type === type)
+        if (invItem) invItem.count = Math.max(0, invItem.count - count)
+        const cItem = chestItems.find((i) => i.type === type)
+        if (cItem) cItem.count += count
+        else chestItems.push({ name: type === 52 ? 'spawner' : 'elytra', type, count })
+      },
       close: () => {}
     }),
     blockAt: (p) => {
@@ -374,14 +392,22 @@ async function runTests() {
       }
     }
   })
+  let chatInv = []
+  chatOfflineBot.inventory.items = () => chatInv.filter(i => i.count > 0)
   chatOfflineBot.openContainer = async () => ({
     containerItems: () => [
       { name: 'spawner', type: 52, count: 64 },
       { name: 'elytra', type: 443, count: 1 }
     ],
-    withdraw: async () => {},
-    deposit: async () => {
+    withdraw: async (type, metadata, count) => {
+      const invItem = chatInv.find(i => i.type === type)
+      if (invItem) invItem.count += count
+      else chatInv.push({ name: type === 52 ? 'spawner' : 'elytra', type, count })
+    },
+    deposit: async (type, metadata, count) => {
       depositedBack = true
+      const invItem = chatInv.find(i => i.type === type)
+      if (invItem) invItem.count = Math.max(0, invItem.count - count)
     },
     close: () => {}
   })

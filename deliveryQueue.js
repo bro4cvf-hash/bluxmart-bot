@@ -4,6 +4,7 @@ import { checkAreaSafety } from './safety.js'
 import {
   withdrawFromEnderChest,
   depositBackToEnderChest,
+  sanitizeBotInventory,
   matchesCatalogCategory,
   isChestLidBlocked
 } from './enderchest.js'
@@ -33,9 +34,17 @@ export async function isPlayerOnline(bot, username, timeoutMs = 3500) {
   const target = String(username || '').trim().toLowerCase()
   if (!target) return false
 
+  const checkPlayers = () => {
+    const players = bot?.players
+    if (!players) return false
+    for (const name in players) {
+      if (name.toLowerCase() === target) return true
+    }
+    return false
+  }
+
   // Step A: Instant check via bot.players
-  const directPlayers = new Set(Object.keys(bot?.players || {}).map((p) => p.toLowerCase()))
-  if (directPlayers.has(target)) return true
+  if (checkPlayers()) return true
 
   // Step B: Tab completion check
   if (typeof bot.tabComplete === 'function') {
@@ -58,7 +67,7 @@ export async function isPlayerOnline(bot, username, timeoutMs = 3500) {
   }
 
   // Step C: Final fallback check via bot.players in case tab list updated
-  return new Set(Object.keys(bot?.players || {}).map((p) => p.toLowerCase())).has(target)
+  return checkPlayers()
 }
 
 export class DeliveryQueueManager {
@@ -119,9 +128,41 @@ export class DeliveryQueueManager {
     this.saveTombstones()
   }
 
+  isOrderCompleted(orderId) {
+    if (!orderId) return false
+    const rawStr = String(orderId).trim()
+    const cleanId = rawStr.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 64)
+    if (this.completedOrderIds.has(rawStr) || (cleanId && this.completedOrderIds.has(cleanId))) {
+      return true
+    }
+    try {
+      if (fs.existsSync(this.tombstoneFilePath)) {
+        const raw = fs.readFileSync(this.tombstoneFilePath, 'utf8')
+        if (raw.includes(`"${rawStr}"`) || (cleanId && raw.includes(`"${cleanId}"`))) {
+          if (rawStr) this.completedOrderIds.add(rawStr)
+          if (cleanId) this.completedOrderIds.add(cleanId)
+          return true
+        }
+      }
+    } catch {}
+
+    const inQueue = this.queue?.find(
+      (o) => (o.orderId === rawStr || o.id === rawStr || (cleanId && (o.orderId === cleanId || o.id === cleanId)))
+    )
+    if (inQueue && (inQueue.status === 'completed' || (inQueue.moneyDelivered && inQueue.itemsDelivered))) {
+      this.markOrderTombstoned(rawStr)
+      if (cleanId) this.markOrderTombstoned(cleanId)
+      return true
+    }
+    return false
+  }
+
   async notifyUpdate(order, extra = {}) {
     if (extra && extra.currentStep) {
       order.currentStep = extra.currentStep
+    }
+    if (extra && extra.deliveryStage) {
+      order.deliveryStage = extra.deliveryStage
     }
     if (extra && extra.chatMessage) {
       order.lastChatMessage = extra.chatMessage
@@ -241,21 +282,58 @@ export class DeliveryQueueManager {
   }
 
   enqueueOrder(order) {
+    const rawIncomingId = String(order.orderId || order.id || '').trim()
     const rawId =
-      String(order.orderId || order.id || `ord_${Date.now()}`)
+      rawIncomingId
         .replace(/[^a-zA-Z0-9_\-]/g, '')
         .slice(0, 64) || `ord_${Date.now()}`
 
-    if (this.completedOrderIds.has(rawId)) {
-      const existingTombstone = this.queue.find((o) => (o.orderId === rawId || o.id === rawId))
+    // Check if orderId is in this.completedOrderIds or order was already delivered
+    const isAlreadyDelivered =
+      (rawIncomingId && this.completedOrderIds.has(rawIncomingId)) ||
+      (rawId && this.completedOrderIds.has(rawId)) ||
+      this.isOrderCompleted(rawIncomingId) ||
+      this.isOrderCompleted(rawId) ||
+      order.status === 'completed' ||
+      Boolean(order.delivered) ||
+      Boolean(order.alreadyDelivered) ||
+      Boolean(
+        order.moneyDelivered &&
+          order.itemsDelivered &&
+          (order.moneyAmount > 0 || order.money > 0 || order.spawners > 0 || order.elytras > 0 || order.hasNonMoneyItems)
+      )
+
+    if (isAlreadyDelivered) {
+      if (rawIncomingId) this.markOrderTombstoned(rawIncomingId)
+      if (rawId) this.markOrderTombstoned(rawId)
+      this.log(`[QUEUE] Re-delivery rejected for Order #${rawIncomingId || rawId} (already completed/tombstoned).`, 'warn')
+      const existingTombstone = this.queue.find(
+        (o) => o.orderId === rawId || o.id === rawId || (rawIncomingId && (o.orderId === rawIncomingId || o.id === rawIncomingId))
+      )
       return {
         status: 'tombstoned',
-        order: existingTombstone || { orderId: rawId, id: rawId, status: 'completed' }
+        rejected: true,
+        code: 'ALREADY_COMPLETED',
+        error: 'Order already delivered and completed. Re-delivery rejected.',
+        order: existingTombstone || { orderId: rawId, id: rawId, status: 'completed', moneyDelivered: true, itemsDelivered: true }
       }
     }
 
-    const existing = this.queue.find((o) => (o.orderId === rawId || o.id === rawId))
+    const existing = this.queue.find(
+      (o) => o.orderId === rawId || o.id === rawId || (rawIncomingId && (o.orderId === rawIncomingId || o.id === rawIncomingId))
+    )
     if (existing) {
+      if (existing.status === 'completed' || (existing.moneyDelivered && existing.itemsDelivered)) {
+        if (rawIncomingId) this.markOrderTombstoned(rawIncomingId)
+        if (rawId) this.markOrderTombstoned(rawId)
+        return {
+          status: 'tombstoned',
+          rejected: true,
+          code: 'ALREADY_COMPLETED',
+          error: 'Order already delivered and completed. Re-delivery rejected.',
+          order: existing
+        }
+      }
       return { status: 'already_queued', order: existing }
     }
 
@@ -373,7 +451,7 @@ export class DeliveryQueueManager {
       if (bot.currentWindow) {
         try { bot.closeWindow(bot.currentWindow) } catch {}
       }
-      this.log('[DELIVERY] Successfully returned to /home 1.')
+      this.log('[DELIVERY] Successfully returned to base.')
       return true
     }
 
@@ -396,14 +474,14 @@ export class DeliveryQueueManager {
       }
     }
 
-    this.log('[DELIVERY] Executing /home 1 to return to base...')
+    this.log('[DELIVERY] Executing return to base...')
     safeChat(bot, '/home 1')
     await delay(600)
     await handleHomesGui()
 
     if (!basePos || !bot.entity) {
       await delay(2000)
-      this.log('[DELIVERY] Successfully returned to /home 1.')
+      this.log('[DELIVERY] Successfully returned to base.')
       return true
     }
 
@@ -415,7 +493,7 @@ export class DeliveryQueueManager {
       await delay(400)
       if (!bot.entity) break
       if (bot.entity.position.distanceTo(basePos) <= 8) {
-        this.log('[DELIVERY] Successfully returned to /home 1.')
+        this.log('[DELIVERY] Successfully returned to base.')
         return true
       }
 
@@ -429,11 +507,6 @@ export class DeliveryQueueManager {
           await handleHomesGui()
         }
       }
-    }
-
-    if (bot.entity && bot.entity.position.distanceTo(basePos) <= 8) {
-      this.log('[DELIVERY] Successfully returned to /home 1.')
-      return true
     }
 
     return false
@@ -460,27 +533,31 @@ export class DeliveryQueueManager {
         this.pendingRerun = false
         const now = Date.now()
         let nextOrder = null
+        const eligiblePhysicalOrders = []
 
-        // Priority 1: Any order that still needs Money sent (works offline & online)
-        nextOrder = this.queue.find(
-          (o) =>
-            o.status !== 'completed' &&
-            o.status !== 'failed' &&
-            !o.moneyDelivered &&
-            (o.moneyAmount > 0 || o.money > 0) &&
-            (o.nextAttemptAt || 0) <= now
-        )
+        // Combined Priority 1 (Money) and Priority 2 (Physical) detection in a single pass
+        for (const o of this.queue) {
+          if (o.status === 'completed' || o.status === 'failed') continue
+          if ((o.nextAttemptAt || 0) > now) continue
 
-        // Priority 2: Physical items for ONLINE buyers whose backoff timer has elapsed
-        if (!nextOrder) {
-          const eligiblePhysicalOrders = this.queue.filter((o) => {
-            if (o.status === 'completed' || o.status === 'failed' || o.status === 'waiting_for_staff') return false
-            if (o.itemsDelivered || !o.hasNonMoneyItems) return false
-            if (o.attempts >= this.maxRetries) return false
-            if ((o.nextAttemptAt || 0) > now) return false
-            return true
-          })
+          // Priority 1: Money orders (can be delivered offline or online)
+          if (!o.moneyDelivered && (o.moneyAmount > 0 || o.money > 0)) {
+            nextOrder = o
+            break
+          }
 
+          // Priority 2: Physical items
+          if (
+            o.status !== 'waiting_for_staff' &&
+            !o.itemsDelivered &&
+            o.hasNonMoneyItems &&
+            (o.attempts || 0) < this.maxRetries
+          ) {
+            eligiblePhysicalOrders.push(o)
+          }
+        }
+
+        if (!nextOrder && eligiblePhysicalOrders.length > 0) {
           for (const candidate of eligiblePhysicalOrders) {
             // Allow unsupported custom item orders (spawners === 0 && elytras === 0 && otherItemsCount > 0) to transition immediately to waiting_for_staff
             if (candidate.otherItemsCount > 0 && candidate.spawners === 0 && candidate.elytras === 0) {
@@ -491,6 +568,7 @@ export class DeliveryQueueManager {
             const user = String(candidate.minecraftUsername || candidate.recipient || '').trim()
             const isOnline = await isPlayerOnline(bot, user)
             if (isOnline) {
+              candidate._lastOnlineAt = Date.now()
               nextOrder = candidate
               break
             } else {
@@ -554,8 +632,16 @@ export class DeliveryQueueManager {
       }
     } finally {
       this.processing = false
-      if (this.processTimer) clearTimeout(this.processTimer)
-      this.processTimer = setTimeout(() => this.processNext(), 2000)
+      if (this.processTimer) {
+        clearTimeout(this.processTimer)
+        this.processTimer = null
+      }
+      const hasPendingOrWaiting = this.queue.some(
+        (o) => !['completed', 'failed', 'waiting_for_staff'].includes(o.status)
+      )
+      if (hasPendingOrWaiting) {
+        this.processTimer = setTimeout(() => this.processNext(), 2000)
+      }
     }
   }
 
@@ -569,68 +655,99 @@ export class DeliveryQueueManager {
       this.saveQueue()
       throw new Error(order.lastError)
     }
+    // Double-check: if order is already completed or tombstoned, abort immediately
+    if (this.completedOrderIds.has(order.orderId) || (order.id && this.completedOrderIds.has(order.id))) {
+      this.log(`[DELIVERY] Order #${order.orderId} is in completedOrderIds/tombstones. Skipping delivery execution.`, 'warn')
+      order.status = 'completed'
+      order.moneyDelivered = true
+      order.itemsDelivered = true
+      order.updatedAt = Date.now()
+      this.saveQueue()
+      return
+    }
+
     this.log(
       `[DELIVERY] Processing Order #${order.orderId} for ${username} (Money: $${order.moneyAmount.toLocaleString()}, Spawners: ${order.spawners}, Elytras: ${order.elytras})`
     )
 
     // 1. Deliver Money via /pay <username> <amount> (Offline Capable)
-    if (!order.moneyDelivered && order.moneyAmount > 0) {
-      this.log(
-        `[OFFLINE-PAY] Sending $${order.moneyAmount.toLocaleString()} to ${username} via /pay...`
-      )
-      let payFailureMsg = null
-      const payErrorKeywords = [
-        'not found',
-        'offline',
-        'insufficient',
-        'not enough',
-        'cannot pay',
-        'disabled',
-        'error'
-      ]
-      const onPayMessage = (msg) => {
-        const lowerMsg = String(msg || '').toLowerCase()
-        if (payErrorKeywords.some((kw) => lowerMsg.includes(kw))) {
-          payFailureMsg = String(msg).trim()
+    if (order.moneyDelivered || Number(order.moneyAmount || order.money || 0) <= 0) {
+      if (!order.moneyDelivered) {
+        order.moneyDelivered = true
+        order.updatedAt = Date.now()
+        this.saveQueue()
+      }
+      this.log(`[DELIVERY] [${order.orderId}] Money delivery skipped: order.moneyDelivered is true or amount is $0. Money cannot be paid twice.`)
+    } else {
+      // Double-check: Before /pay is run, check if (order.moneyDelivered) -> skip money delivery so money can NEVER be paid twice!
+      if (order.moneyDelivered) {
+        this.log(`[DELIVERY] [${order.orderId}] Double-check guard: order.moneyDelivered is already true! Skipping /pay so money can NEVER be paid twice!`, 'warn')
+      } else {
+        this.log(
+          `[OFFLINE-PAY] Sending $${order.moneyAmount.toLocaleString()} to ${username} via /pay...`
+        )
+        let payFailureMsg = null
+        const payErrorKeywords = [
+          'not found',
+          'offline',
+          'insufficient',
+          'not enough',
+          'cannot pay',
+          'disabled',
+          'error'
+        ]
+        const onPayMessage = (msg) => {
+          const lowerMsg = String(msg || '').toLowerCase()
+          if (payErrorKeywords.some((kw) => lowerMsg.includes(kw))) {
+            payFailureMsg = String(msg).trim()
+          }
         }
-      }
-      if (typeof bot.on === 'function') {
-        bot.on('messagestr', onPayMessage)
-      }
-      try {
-        safeChat(bot, `/pay ${username} ${order.moneyAmount}`)
-        await delay(1800)
-      } finally {
-        if (typeof bot.removeListener === 'function') {
-          bot.removeListener('messagestr', onPayMessage)
-        } else if (typeof bot.off === 'function') {
-          bot.off('messagestr', onPayMessage)
+        if (typeof bot.on === 'function') {
+          bot.on('messagestr', onPayMessage)
         }
-      }
+        try {
+          safeChat(bot, `/pay ${username} ${order.moneyAmount}`)
+          await delay(1800)
+        } finally {
+          if (typeof bot.removeListener === 'function') {
+            bot.removeListener('messagestr', onPayMessage)
+          } else if (typeof bot.off === 'function') {
+            bot.off('messagestr', onPayMessage)
+          }
+        }
 
-      if (payFailureMsg) {
-        order.attempts = (order.attempts || 0) + 1
-        throw new Error(`/pay failed for ${username}: ${payFailureMsg}`)
-      }
+        if (payFailureMsg) {
+          order.attempts = (order.attempts || 0) + 1
+          throw new Error(`/pay failed for ${username}: ${payFailureMsg}`)
+        }
 
-      safeChat(
-        bot,
-        `/msg ${username} [Bluxmart] Paid $${order.moneyAmount.toLocaleString()} for Order #${order.orderId}!`
-      )
-      order.moneyDelivered = true
-      if (!order.hasNonMoneyItems || (order.spawners === 0 && order.elytras === 0 && order.otherItemsCount === 0)) {
-        order.itemsDelivered = true
-        order.status = 'completed'
-        this.markOrderTombstoned(order.orderId)
-      }
-      order.updatedAt = Date.now()
-      this.saveQueue()
+        // Once /pay finishes, immediately set order.moneyDelivered = true and persist queue!
+        order.moneyDelivered = true
+        order.updatedAt = Date.now()
+        this.saveQueue()
 
-      await this.notifyUpdate(order, {
-        chatMessage: order.itemsDelivered
-          ? `💸 Paid $${order.moneyAmount.toLocaleString()} to ${username} via /pay! Your money-only order #${order.orderId} is now complete.`
-          : `💸 Paid $${order.moneyAmount.toLocaleString()} to ${username} via /pay! Now waiting for ${username} to be in-game on donutsmp.net for physical items.`
-      })
+        safeChat(
+          bot,
+          `/msg ${username} [Bluxmart] Paid $${order.moneyAmount.toLocaleString()} for Order #${order.orderId}!`
+        )
+        if (!order.hasNonMoneyItems || (order.spawners === 0 && order.elytras === 0 && order.otherItemsCount === 0)) {
+          order.itemsDelivered = true
+          order.status = 'completed'
+          order.currentStep = 'completed'
+          order.deliveryStage = 'completed'
+          this.markOrderTombstoned(order.orderId)
+          if (order.id && order.id !== order.orderId) this.markOrderTombstoned(order.id)
+          this.saveTombstones()
+        }
+        order.updatedAt = Date.now()
+        this.saveQueue()
+
+        await this.notifyUpdate(order, {
+          chatMessage: order.itemsDelivered
+            ? `💸 Paid $${order.moneyAmount.toLocaleString()} to ${username} via /pay! Your money-only order #${order.orderId} is now complete.`
+            : `💸 Paid $${order.moneyAmount.toLocaleString()} to ${username} via /pay! Now waiting for ${username} to be in-game on donutsmp.net for physical items.`
+        })
+      }
     }
 
     // 2. Deliver Physical Items (Spawners / Elytras) — PLAYER MUST BE IN-GAME
@@ -653,11 +770,18 @@ export class DeliveryQueueManager {
         return
       }
 
-      // Pre-flight Online Check: Confirm buyer is online via tab complete right before physical handling
+      // Pre-flight Online Check: Confirm buyer is online right before physical handling
       order.currentStep = 'online_check'
       await this.notifyUpdate(order, { currentStep: 'online_check' })
       this.log(`[DELIVERY] [${order.orderId}] Step 1: Checking buyer ${username} online status...`)
-      const isOnline = await isPlayerOnline(bot, username)
+
+      const isDirectlyInPlayers = Boolean(
+        bot.players &&
+        Object.keys(bot.players).some((p) => p.toLowerCase() === username.toLowerCase())
+      )
+      const recentlyChecked = Boolean(order._lastOnlineAt && Date.now() - order._lastOnlineAt < 15000)
+      const isOnline = (isDirectlyInPlayers || recentlyChecked) ? true : await isPlayerOnline(bot, username)
+
       if (!isOnline) {
         order.status = 'waiting_for_player'
         order.lastError = `Buyer ${username} is offline on donutsmp.net`
@@ -676,32 +800,18 @@ export class DeliveryQueueManager {
 
       this.log(`[DELIVERY] [${order.orderId}] Step 2: Preparing base & Ender Chest...`)
 
-      // Step 2a: Ensure any open window is closed and return to base only if not near Ender Chest
+      // Step 2a: Ensure any open window is closed (enderchest.js handles finding and placing the chest)
       order.currentStep = 'ec_prep'
       await this.notifyUpdate(order, { currentStep: 'ec_prep' })
       if (bot.currentWindow) {
         try { bot.closeWindow(bot.currentWindow) } catch {}
         await delay(200)
       }
-      let nearbyEC = bot.findBlock ? bot.findBlock({
-        matching: (block) => block && block.name === 'ender_chest',
-        maxDistance: 4.5
-      }) : null
-      if (!nearbyEC) {
-        await this.returnToBaseSafely(bot, null, 4000)
-        await delay(300)
-        nearbyEC = bot.findBlock ? bot.findBlock({
-          matching: (block) => block && block.name === 'ender_chest',
-          maxDistance: 4.5
-        }) : null
-      }
       const startBasePos = bot.entity?.position ? bot.entity.position.clone() : null
 
-      // Step 2b: Ensure bot inventory starts clean (deposit any leftover spawners/elytras into Ender Chest)
+      // Step 2b: Ensure bot inventory starts clean (deposit any leftover items into Ender Chest)
       this.log(`[DELIVERY] [${order.orderId}] Step 2b: Clearing stray inventory into Ender Chest...`)
-      if (order.spawners > 0 || order.elytras > 0) {
-        await depositBackToEnderChest(bot)
-      }
+      await sanitizeBotInventory(bot, { spawners: 0, elytras: 0 })
 
       // Step 2c: Withdraw exact items ordered from Ender Chest
       order.currentStep = 'withdraw'
@@ -721,6 +831,19 @@ export class DeliveryQueueManager {
           throw err
         }
       }
+
+      // Ender Chest items retrieved stage
+      order.currentStep = 'items_retrieved'
+      order.deliveryStage = 'order items retrieved'
+      const itemsRetrievedMsg = '📦 Order items retrieved from storage. Preparing teleport...'
+      order.lastChatMessage = itemsRetrievedMsg
+      this.saveQueue()
+      await this.notifyUpdate(order, {
+        currentStep: 'items_retrieved',
+        deliveryStage: 'order items retrieved',
+        chatMessage: itemsRetrievedMsg
+      })
+
       // Step 2d: Send /tpa <username> and listen for immediate offline feedback
       let offlineChatDetected = null
       const offlineKeywords = [
@@ -747,10 +870,18 @@ export class DeliveryQueueManager {
 
       let tpResult
       try {
-        order.currentStep = 'tpa_request'
-        await this.notifyUpdate(order, { currentStep: 'tpa_request' })
+        order.currentStep = 'sent_tpa'
+        order.deliveryStage = 'sent tpa'
+        const sentTpaMsg = '📨 Sent teleport request to ' + username + '.'
+        order.lastChatMessage = sentTpaMsg
+        this.saveQueue()
         this.log(`[DELIVERY] [${order.orderId}] Step 2d: Sending /tpa ${username}...`)
         safeChat(bot, `/tpa ${username}`)
+        await this.notifyUpdate(order, {
+          currentStep: 'sent_tpa',
+          deliveryStage: 'sent tpa',
+          chatMessage: sentTpaMsg
+        })
         await delay(600)
         if (!offlineChatDetected) {
           safeChat(
@@ -758,6 +889,18 @@ export class DeliveryQueueManager {
             `/msg ${username} [Bluxmart] Order #${order.orderId} ready! Accept /tpa in-game in a SAFE spot (no hazards or PvP).`
           )
         }
+
+        // Waiting for user to accept TPA
+        order.currentStep = 'waiting_tpa_accept'
+        order.deliveryStage = 'please accept tpa request'
+        const waitingTpaMsg = "⏳ Please accept our bot's /tpa request in-game to receive your items."
+        order.lastChatMessage = waitingTpaMsg
+        this.saveQueue()
+        await this.notifyUpdate(order, {
+          currentStep: 'waiting_tpa_accept',
+          deliveryStage: 'please accept tpa request',
+          chatMessage: waitingTpaMsg
+        })
 
         // Wait for teleport completion
         tpResult = await this.waitForTeleport(
@@ -836,53 +979,67 @@ export class DeliveryQueueManager {
           bot,
           `/msg ${username} [Bluxmart] ⚠️ DELIVERY ABORTED! Hazardous area detected (${hazard.name})! Please move to a safe, clear location and whisper "claim" when ready.`
         )
-        // Teleport /home 1 and wait for base arrival before touching Ender Chest (EC-06)
+        // Teleport to base safely and wait for base arrival before touching Ender Chest (EC-06)
         await this.returnToBaseSafely(bot, startBasePos, 8000)
         await depositBackToEnderChest(bot)
-        const reachedMax = order.attempts >= this.maxRetries
-        order.status = reachedMax ? 'failed' : 'waiting_for_player'
-        order.lastError = `Unsafe drop area: ${hazard.name} within ${hazard.distance} blocks`
+        order.status = 'waiting_for_player'
+        order.currentStep = 'unsafe_location'
+        order.deliveryStage = 'unsafe_location'
+        order.lastError = `Unsafe location: ${hazard.name} detected within ${hazard.distance} blocks`
+        order.lastChatMessage = '⚠️ Unsafe location detected! Please get to a safe location and click on Claim Order again.'
         order.nextAttemptAt = Date.now() + 30000
         order.updatedAt = Date.now()
         this.saveQueue()
-        const msg = reachedMax
-          ? `⚠️ Auto-delivery failed after ${this.maxRetries} attempts (${order.lastError}). Staff have been alerted to complete your delivery manually.`
-          : `🚨 Safety Abort for ${username}: Detected ${hazard.name}! Move to a safe spot and whisper "claim".`
-        order.lastChatMessage = msg
-        await this.notifyUpdate(order, { chatMessage: msg })
+        await this.notifyUpdate(order, {
+          currentStep: 'unsafe_location',
+          deliveryStage: 'unsafe_location',
+          chatMessage: order.lastChatMessage
+        })
         return
       }
 
-      this.log(`[DELIVERY] Area safe around ${username}. Tossing ordered items...`)
+      // Before dropping items, check if (order.itemsDelivered) -> skip item drop so items can NEVER be dropped twice!
+      if (order.itemsDelivered) {
+        this.log(`[DELIVERY] [${order.orderId}] Double-check guard: order.itemsDelivered is already true! Skipping item drop so items can NEVER be dropped twice!`, 'warn')
+      } else {
+        this.log(`[DELIVERY] Area safe around ${username}. Tossing ordered items...`)
 
-      // Step 2f: Drop items with Real-Time Anti-Duplication Decrementing (EC-04)
-      order.currentStep = 'toss_items'
-      await this.notifyUpdate(order, { currentStep: 'toss_items' })
-      const dropAborted = await this.tossOrderedItemsSafely(bot, username, order)
+        // Step 2f: Drop items with Real-Time Anti-Duplication Decrementing (EC-04)
+        order.currentStep = 'toss_items'
+        await this.notifyUpdate(order, { currentStep: 'toss_items' })
+        const dropAborted = await this.tossOrderedItemsSafely(bot, username, order)
 
-      if (dropAborted) {
-        this.log(
-          `[DELIVERY] Delivery aborted during drop for ${username}. Returning undelivered balance to Ender Chest.`,
-          'warn'
-        )
-        safeChat(
-          bot,
-          `/msg ${username} [Bluxmart] ⚠️ Drop interrupted due to hazard/distance! Please move to a safe location and whisper "claim" to resume.`
-        )
-        await this.returnToBaseSafely(bot, startBasePos, 8000)
-        await depositBackToEnderChest(bot)
-        const reachedMax = order.attempts >= this.maxRetries
-        order.status = reachedMax ? 'failed' : 'waiting_for_player'
-        order.lastError = 'Delivery interrupted during drop'
-        order.nextAttemptAt = Date.now() + 30000
+        if (dropAborted) {
+          this.log(
+            `[DELIVERY] Delivery aborted during drop for ${username}. Returning undelivered balance to Ender Chest.`,
+            'warn'
+          )
+          safeChat(
+            bot,
+            `/msg ${username} [Bluxmart] ⚠️ Unsafe location detected! Please get to a safe location and click Claim Order again.`
+          )
+          await this.returnToBaseSafely(bot, startBasePos, 8000)
+          await depositBackToEnderChest(bot)
+          order.status = 'waiting_for_player'
+          order.currentStep = 'unsafe_location'
+          order.deliveryStage = 'unsafe_location'
+          order.lastError = 'Unsafe location detected'
+          order.lastChatMessage = '⚠️ Unsafe location detected! Please get to a safe location and click on Claim Order again.'
+          order.nextAttemptAt = Date.now() + 30000
+          order.updatedAt = Date.now()
+          this.saveQueue()
+          await this.notifyUpdate(order, {
+            currentStep: 'unsafe_location',
+            deliveryStage: 'unsafe_location',
+            chatMessage: order.lastChatMessage
+          })
+          return
+        }
+
+        // Once items are dropped, immediately set order.itemsDelivered = true and persist queue!
+        order.itemsDelivered = true
         order.updatedAt = Date.now()
         this.saveQueue()
-        const msg = reachedMax
-          ? `⚠️ Auto-delivery failed after ${this.maxRetries} attempts (${order.lastError}). Staff have been alerted to complete your delivery manually.`
-          : `⚠️ Delivery interrupted while tossing items to ${username}. Remaining balance: ${order.spawners}x Spawners, ${order.elytras}x Elytras. Whisper "claim" to retry.`
-        order.lastChatMessage = msg
-        await this.notifyUpdate(order, { chatMessage: msg })
-        return
       }
 
       // If order also includes unsupported custom items (otherItemsCount > 0), route remaining custom items to staff
@@ -905,16 +1062,21 @@ export class DeliveryQueueManager {
       await this.notifyUpdate(order, { currentStep: 'return_home' })
 
       this.log(
-        `[DELIVERY] ✅ Order #${order.orderId} successfully delivered to ${username}! Returning home via /home 1...`,
+        `[DELIVERY] ✅ Order #${order.orderId} successfully delivered to ${username}! Returning home...`,
         'success'
       )
       await this.returnToBaseSafely(bot, startBasePos, 8000)
 
+      // Once finished, immediately set flags, add order.orderId to completedOrderIds and persist tombstones.
       order.itemsDelivered = true
+      order.moneyDelivered = true
       order.status = 'completed'
       order.currentStep = 'completed'
+      order.deliveryStage = 'completed'
       order.updatedAt = Date.now()
       this.markOrderTombstoned(order.orderId)
+      if (order.id && order.id !== order.orderId) this.markOrderTombstoned(order.id)
+      this.saveTombstones()
       this.saveQueue()
 
       safeChat(
@@ -924,6 +1086,7 @@ export class DeliveryQueueManager {
 
       await this.notifyUpdate(order, {
         currentStep: 'completed',
+        deliveryStage: 'completed',
         chatMessage: `✅ Order #${order.orderId} has been successfully delivered in-game to ${username}!`
       })
     }
@@ -937,10 +1100,6 @@ export class DeliveryQueueManager {
         return { success: false, reason: 'offline_chat', message: offlineMsg }
       }
       await delay(500)
-      const offlineMsgAfter = typeof getOfflineChat === 'function' ? getOfflineChat() : null
-      if (offlineMsgAfter) {
-        return { success: false, reason: 'offline_chat', message: offlineMsgAfter }
-      }
       if (!bot.entity) return { success: false, reason: 'no_entity' }
       const buyerEntity = bot.players?.[username]?.entity
       const movedFromBase = Boolean(startBasePos && bot.entity.position.distanceTo(startBasePos) > 10)
@@ -973,16 +1132,6 @@ export class DeliveryQueueManager {
       return true
     }
 
-    try {
-      await bot.lookAt(buyer.position.offset(0, 1.6, 0))
-    } catch {}
-
-    // Distance check: ensure buyer is within reachable drop distance
-    if (bot.entity.position.distanceTo(buyer.position) > 6.0) {
-      this.log(`[DELIVERY] Buyer ${username} is too far away (> 6 blocks). Aborting drop.`, 'warn')
-      return true
-    }
-
     const initialHealth = typeof bot.health === 'number' ? bot.health : 20
 
     for (const item of bot.inventory.items()) {
@@ -1002,16 +1151,6 @@ export class DeliveryQueueManager {
         this.log(
           `[DELIVERY] Buyer ${username} moved > 6 blocks away or disappeared mid-drop. Aborting drop.`,
           'warn'
-        )
-        return true
-      }
-
-      // Re-verify area safety (pistons, lava, buyer weapon drawn, hostile mobs)
-      const currentSafety = checkAreaSafety(bot, this.safetyRadius, username)
-      if (!currentSafety.safe) {
-        this.log(
-          `[SAFETY ALERT] Mid-drop hazard detected (${currentSafety.hazard?.name})! Aborting drop immediately.`,
-          'error'
         )
         return true
       }

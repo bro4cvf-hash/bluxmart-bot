@@ -397,6 +397,113 @@ export async function openEnderChestSafely(bot, ecBlock, timeoutMs = 8000) {
 }
 
 /**
+ * Sanitizes the bot's inventory by depositing any unauthorized/stray items (preserving 'ender_chest')
+ * and any excess spawners or elytras beyond the allowed amounts into the Ender Chest.
+ *
+ * @param {import('mineflayer').Bot} bot
+ * @param {{ spawners?: number, elytras?: number }} [allowedItems={ spawners: 0, elytras: 0 }]
+ * @param {object} [options={}]
+ * @returns {Promise<{ sanitized: boolean, excessSpawners: number, excessElytras: number, strayCount: number }>}
+ */
+export async function sanitizeBotInventory(bot, allowedItems = { spawners: 0, elytras: 0 }, options = {}) {
+  const allowedSpawners = Math.max(0, Number(allowedItems?.spawners) || 0)
+  const allowedElytras = Math.max(0, Number(allowedItems?.elytras) || 0)
+
+  // Single-pass analysis: counts spawners, elytras, and finds stray/unauthorized items (preserving 'ender_chest')
+  const invItems = bot.inventory?.items?.() || []
+  let totalSpawners = 0
+  let totalElytras = 0
+  const strayItems = []
+
+  for (const item of invItems) {
+    if (matchesCatalogCategory(item.name, 'spawner')) {
+      totalSpawners += item.count
+    } else if (matchesCatalogCategory(item.name, 'elytra')) {
+      totalElytras += item.count
+    } else if (item.name !== 'ender_chest') {
+      strayItems.push(item)
+    }
+  }
+
+  const excessSpawners = Math.max(0, totalSpawners - allowedSpawners)
+  const excessElytras = Math.max(0, totalElytras - allowedElytras)
+
+  // Fast-path: if no excess and no stray items, return immediately without opening chest
+  if (excessSpawners === 0 && excessElytras === 0 && strayItems.length === 0) {
+    return {
+      sanitized: false,
+      excessSpawners: 0,
+      excessElytras: 0,
+      strayCount: 0
+    }
+  }
+
+  let container = options?.container || null
+  const shouldClose = !container
+
+  if (!container) {
+    if (bot.currentWindow) {
+      try { bot.closeWindow(bot.currentWindow) } catch {}
+      await delay(200)
+    }
+    const ecBlock = await findOrPlaceEnderChest(bot)
+    container = await openEnderChestSafely(bot, ecBlock, options?.timeoutMs || 8000)
+  }
+
+  try {
+    await delay(300)
+
+    // Deposit all stray items
+    while (true) {
+      const stray = bot.inventory.items().find(
+        (i) => i.name !== 'ender_chest' &&
+               !matchesCatalogCategory(i.name, 'spawner') &&
+               !matchesCatalogCategory(i.name, 'elytra')
+      )
+      if (!stray) break
+      await container.deposit(stray.type, stray.metadata ?? null, stray.count)
+      await delay(150)
+    }
+
+    // Deposit excess spawners
+    let remainingExcessSpawners = excessSpawners
+    while (remainingExcessSpawners > 0) {
+      const item = bot.inventory.items().find((i) => matchesCatalogCategory(i.name, 'spawner'))
+      if (!item) break
+      const depositCount = Math.min(remainingExcessSpawners, item.count)
+      await container.deposit(item.type, item.metadata ?? null, depositCount)
+      remainingExcessSpawners -= depositCount
+      await delay(150)
+    }
+
+    // Deposit excess elytras
+    let remainingExcessElytras = excessElytras
+    while (remainingExcessElytras > 0) {
+      const item = bot.inventory.items().find((i) => matchesCatalogCategory(i.name, 'elytra'))
+      if (!item) break
+      const depositCount = Math.min(remainingExcessElytras, item.count)
+      await container.deposit(item.type, item.metadata ?? null, depositCount)
+      remainingExcessElytras -= depositCount
+      await delay(150)
+    }
+  } finally {
+    if (shouldClose && container) {
+      try {
+        container.close()
+      } catch {}
+      await delay(200)
+    }
+  }
+
+  return {
+    sanitized: true,
+    excessSpawners,
+    excessElytras,
+    strayCount: strayItems.length
+  }
+}
+
+/**
  * Opens the physical Ender Chest at the bot's safe base and withdraws the exact required
  * counts of spawners and elytras into the bot's main inventory.
  * If stock is insufficient, automatically rolls back any partial withdrawal and deposits back.
@@ -409,129 +516,158 @@ export async function withdrawFromEnderChest(bot, needed) {
     try { bot.closeWindow(bot.currentWindow) } catch {}
     await delay(200)
   }
+
   const targetSpawners = Math.max(0, Number(needed?.spawners) || 0)
   const targetElytras = Math.max(0, Number(needed?.elytras) || 0)
-  const required = {
-    spawners: targetSpawners,
-    elytras: targetElytras
-  }
 
-  const currentSpawners = countInventoryCategory(bot, 'spawner')
-  const currentElytras = countInventoryCategory(bot, 'elytra')
+  const initialSpawners = countInventoryCategory(bot, 'spawner')
+  const initialElytras = countInventoryCategory(bot, 'elytra')
+  const initialStrays = (bot.inventory?.items?.() || []).filter(
+    (item) => item.name !== 'ender_chest' &&
+              !matchesCatalogCategory(item.name, 'spawner') &&
+              !matchesCatalogCategory(item.name, 'elytra')
+  )
 
-  const missingSpawners = Math.max(0, targetSpawners - currentSpawners)
-  const missingElytras = Math.max(0, targetElytras - currentElytras)
-
-  if (missingSpawners === 0 && missingElytras === 0) {
+  if (
+    initialSpawners === targetSpawners &&
+    initialElytras === targetElytras &&
+    initialStrays.length === 0
+  ) {
     return {
       withdrawnSpawners: 0,
       withdrawnElytras: 0,
-      inventorySpawners: currentSpawners,
-      inventoryElytras: currentElytras
+      inventorySpawners: initialSpawners,
+      inventoryElytras: initialElytras
     }
-  }
-
-  // Pre-flight check: bot inventory space
-  if (typeof bot.inventory?.emptySlotCount === 'function' && bot.inventory.emptySlotCount() < 1) {
-    throw new Error('Bot inventory is full! Clear slots before withdrawing items.')
   }
 
   const ecBlock = await findOrPlaceEnderChest(bot)
   const container = await openEnderChestSafely(bot, ecBlock, 8000)
+
+  let withdrawnSpawners = 0
+  let withdrawnElytras = 0
 
   try {
     await delay(350)
 
-    const spawnersAvailable = container
-      .containerItems()
-      .filter((item) => matchesCatalogCategory(item.name, 'spawner'))
-      .reduce((sum, item) => sum + item.count, 0)
-    const elytrasAvailable = container
-      .containerItems()
-      .filter((item) => matchesCatalogCategory(item.name, 'elytra'))
-      .reduce((sum, item) => sum + item.count, 0)
+    // Reconcile excess and deposit any stray items into the Ender Chest first
+    await sanitizeBotInventory(bot, { spawners: targetSpawners, elytras: targetElytras }, { container })
 
-    let remainingSpawnersToPull = missingSpawners
-    let remainingElytrasToPull = missingElytras
+    const currentSpawners = countInventoryCategory(bot, 'spawner')
+    const currentElytras = countInventoryCategory(bot, 'elytra')
 
-    for (const item of container.containerItems()) {
-      if (remainingSpawnersToPull > 0 && matchesCatalogCategory(item.name, 'spawner')) {
-        const takeCount = Math.min(remainingSpawnersToPull, item.count)
-        await container.withdraw(item.type, item.metadata ?? null, takeCount)
-        remainingSpawnersToPull -= takeCount
-        await delay(200)
-      } else if (remainingElytrasToPull > 0 && matchesCatalogCategory(item.name, 'elytra')) {
-        const takeCount = Math.min(remainingElytrasToPull, item.count)
-        await container.withdraw(item.type, item.metadata ?? null, takeCount)
-        remainingElytrasToPull -= takeCount
-        await delay(200)
+    const missingSpawners = Math.max(0, targetSpawners - currentSpawners)
+    const missingElytras = Math.max(0, targetElytras - currentElytras)
+
+    if (missingSpawners > 0 || missingElytras > 0) {
+      if (typeof bot.inventory?.emptySlotCount === 'function' && bot.inventory.emptySlotCount() < 1) {
+        throw new Error('Bot inventory is full! Clear slots before withdrawing items.')
       }
-    }
 
-    if (remainingSpawnersToPull > 0 || remainingElytrasToPull > 0) {
-      // Automatic Rollback of partial withdrawals (EC-09)
-      for (const item of bot.inventory.items()) {
-        if (matchesCatalogCategory(item.name, 'spawner') || matchesCatalogCategory(item.name, 'elytra')) {
-          try {
-            await container.deposit(item.type, item.metadata ?? null, item.count)
-          } catch {}
+      const spawnersAvailable = container
+        .containerItems()
+        .filter((item) => matchesCatalogCategory(item.name, 'spawner'))
+        .reduce((sum, item) => sum + item.count, 0)
+      const elytrasAvailable = container
+        .containerItems()
+        .filter((item) => matchesCatalogCategory(item.name, 'elytra'))
+        .reduce((sum, item) => sum + item.count, 0)
+
+      if (spawnersAvailable < missingSpawners || elytrasAvailable < missingElytras) {
+        throw new Error(
+          `Insufficient physical items in Ender Chest: order requires ${targetSpawners} Spawner (${missingSpawners} missing), ${targetElytras} Elytra (${missingElytras} missing); Ender Chest only has ${spawnersAvailable} Spawner, ${elytrasAvailable} Elytra.`
+        )
+      }
+
+      let remainingSpawnersToPull = missingSpawners
+      let remainingElytrasToPull = missingElytras
+
+      for (const item of container.containerItems()) {
+        if (remainingSpawnersToPull <= 0 && remainingElytrasToPull <= 0) break
+
+        if (remainingSpawnersToPull > 0 && matchesCatalogCategory(item.name, 'spawner')) {
+          const takeCount = Math.min(remainingSpawnersToPull, item.count)
+          await container.withdraw(item.type, item.metadata ?? null, takeCount)
+          remainingSpawnersToPull -= takeCount
+          await delay(200)
+        } else if (remainingElytrasToPull > 0 && matchesCatalogCategory(item.name, 'elytra')) {
+          const takeCount = Math.min(remainingElytrasToPull, item.count)
+          await container.withdraw(item.type, item.metadata ?? null, takeCount)
+          remainingElytrasToPull -= takeCount
+          await delay(200)
         }
       }
 
-      throw new Error(
-        `Insufficient physical items in Ender Chest: order requires ${required.spawners} Spawner, ${required.elytras} Elytra; Ender Chest only has ${spawnersAvailable} Spawner, ${elytrasAvailable} Elytra.`
-      )
+      if (remainingSpawnersToPull > 0 || remainingElytrasToPull > 0) {
+        // Automatic Rollback of partial withdrawals (EC-09)
+        for (const item of bot.inventory.items()) {
+          if (matchesCatalogCategory(item.name, 'spawner') || matchesCatalogCategory(item.name, 'elytra')) {
+            try {
+              await container.deposit(item.type, item.metadata ?? null, item.count)
+            } catch {}
+          }
+        }
+
+        throw new Error(
+          `Failed to withdraw full order: ${remainingSpawnersToPull} spawners and ${remainingElytrasToPull} elytras could not be retrieved.`
+        )
+      }
+
+      withdrawnSpawners = missingSpawners
+      withdrawnElytras = missingElytras
     }
   } finally {
     try {
       container.close()
-    } catch {
-      // ignore close errors
-    }
+    } catch {}
   }
 
   await delay(250)
 
+  // Post-condition check:
+  // Verify countInventoryCategory(bot, 'spawner') === targetSpawners
+  // Verify countInventoryCategory(bot, 'elytra') === targetElytras
+  // Verify bot.inventory.items() has ZERO stray items.
+  // If violated, throw Error.
+  const finalSpawners = countInventoryCategory(bot, 'spawner')
+  const finalElytras = countInventoryCategory(bot, 'elytra')
+  const finalStrays = (bot.inventory?.items?.() || []).filter(
+    (item) => item.name !== 'ender_chest' &&
+              !matchesCatalogCategory(item.name, 'spawner') &&
+              !matchesCatalogCategory(item.name, 'elytra')
+  )
+
+  if (finalSpawners !== targetSpawners) {
+    throw new Error(
+      `Post-condition failed: expected ${targetSpawners} spawners in inventory, found ${finalSpawners}`
+    )
+  }
+  if (finalElytras !== targetElytras) {
+    throw new Error(
+      `Post-condition failed: expected ${targetElytras} elytras in inventory, found ${finalElytras}`
+    )
+  }
+  if (finalStrays.length > 0) {
+    const strayNames = finalStrays.map((i) => `${i.name}x${i.count}`).join(', ')
+    throw new Error(`Post-condition failed: bot inventory contains stray items: ${strayNames}`)
+  }
+
   return {
-    withdrawnSpawners: missingSpawners,
-    withdrawnElytras: missingElytras,
-    inventorySpawners: countInventoryCategory(bot, 'spawner'),
-    inventoryElytras: countInventoryCategory(bot, 'elytra')
+    withdrawnSpawners,
+    withdrawnElytras,
+    inventorySpawners: finalSpawners,
+    inventoryElytras: finalElytras
   }
 }
 
 /**
- * Deposits any held Spawners or Elytras back into the physical Ender Chest at base
+ * Deposits any held Spawners or Elytras and stray items back into the physical Ender Chest at base
  * (used if a buyer canceled, went offline, or was in a lava/campfire trap).
+ * Delegates directly to sanitizeBotInventory.
+ *
+ * @param {import('mineflayer').Bot} bot
  */
 export async function depositBackToEnderChest(bot) {
-  if (bot.currentWindow) {
-    try { bot.closeWindow(bot.currentWindow) } catch {}
-    await delay(200)
-  }
-  const spawnersInInv = countInventoryCategory(bot, 'spawner')
-  const elytrasInInv = countInventoryCategory(bot, 'elytra')
-  if (spawnersInInv === 0 && elytrasInInv === 0) return
-
-  const ecBlock = await findOrPlaceEnderChest(bot)
-  const container = await openEnderChestSafely(bot, ecBlock, 8000)
-
-  try {
-    await delay(300)
-    for (const item of bot.inventory.items()) {
-      if (
-        matchesCatalogCategory(item.name, 'spawner') ||
-        matchesCatalogCategory(item.name, 'elytra')
-      ) {
-        await container.deposit(item.type, item.metadata ?? null, item.count)
-        await delay(150)
-      }
-    }
-  } finally {
-    try {
-      container.close()
-    } catch {
-      // ignore
-    }
-  }
+  return await sanitizeBotInventory(bot, { spawners: 0, elytras: 0 })
 }
+

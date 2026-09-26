@@ -204,6 +204,22 @@ let playerList = []
 const activeBots = new Map()
 const allBotInstances = new Set()
 const pendingReconnectTimeouts = new Set()
+const claimCooldowns = new Map()
+
+function isClaimOnCooldown(player) {
+  if (!player) return true
+  const key = String(player).toLowerCase().trim()
+  const now = Date.now()
+  const last = claimCooldowns.get(key)
+  if (last && now - last < 5000) return true
+  claimCooldowns.set(key, now)
+  if (claimCooldowns.size > 200) {
+    for (const [k, v] of claimCooldowns.entries()) {
+      if (now - v > 60000) claimCooldowns.delete(k)
+    }
+  }
+  return false
+}
 
 function inventorySnapshot(bot) {
   const serializeItem = (item) => {
@@ -647,10 +663,6 @@ function stopAllBots(target = null) {
     disconnectBotInstance(bot, 'Stopped by user')
   }
   allBotInstances.clear()
-
-  for (const [uname, bot] of activeBots.entries()) {
-    disconnectBotInstance(bot, 'Stopped by user')
-  }
   activeBots.clear()
   playerList = []
 
@@ -998,6 +1010,7 @@ function newBot(options) {
         if (revMatch && revMatch[1]) sender = revMatch[1]
       }
       if (sender && !['me', 'you', bot._client?.username?.toLowerCase()].includes(sender.toLowerCase())) {
+        if (isClaimOnCooldown(sender)) return
         queueManager.retryPendingForPlayer(sender)
         sendEvent(bot._client.username, 'chat', `[Bluxmart] Claim whisper detected from ${sender}! Re-queueing pending orders...`)
         safeChat(bot, `/msg ${sender} [Bluxmart] Claim received! Retrying your order delivery now...`)
@@ -1013,6 +1026,7 @@ function newBot(options) {
     if (!username || !/^\.?[a-zA-Z0-9_]{3,16}$/.test(username)) return
     const cleanMsg = (message || '').replace(/[\r\n\0]/g, ' ').trim().toLowerCase()
     if (cleanMsg.includes('claim') || cleanMsg.includes('order')) {
+      if (isClaimOnCooldown(username)) return
       const retried = queueManager.retryPendingForPlayer(username)
       const reply = retried
         ? `/msg ${username} [Bluxmart] Claim received! Retrying your order delivery now...`
@@ -1389,6 +1403,11 @@ async function reportStatusToBluxmart(order) {
     const orderId = order.orderId || order.id
     if (!orderId) return
     const botUsername = getPrimaryDeliveryBot()?._client?.username || getPrimaryDeliveryBot()?.username || 'bot'
+    let chatMsg = order.lastChatMessage || (order.status === 'completed' ? `Delivered by TrafficerMC bot (${botUsername})` : undefined)
+    if (chatMsg && typeof chatMsg === 'string') {
+      chatMsg = chatMsg.replace(/\/home\s*1\b/gi, '').replace(/\s{2,}/g, ' ').trim()
+      if (!chatMsg) chatMsg = undefined
+    }
     const res = await fetch(`${BLUXMART_SITE_URL}/api/bot/sync`, {
       method: 'POST',
       signal: AbortSignal.timeout(8000),
@@ -1402,13 +1421,14 @@ async function reportStatusToBluxmart(order) {
       body: JSON.stringify({
         orderId,
         status: order.status,
+        deliveryStage: order.deliveryStage || order.currentStep,
         moneyDelivered: Boolean(order.moneyDelivered),
         itemsDelivered: Boolean(order.itemsDelivered),
         lastError: order.lastError || null,
         attempts: Number(order.attempts || 0),
         timestamp: new Date().toISOString(),
         botUsername,
-        chatMessage: order.lastChatMessage || (order.status === 'completed' ? `Delivered by TrafficerMC bot (${botUsername})` : undefined)
+        chatMessage: chatMsg
       })
     })
     if (!res.ok) {
@@ -1772,6 +1792,22 @@ const handleHttpRequest = async (req, res) => {
     }
     const body = await readJsonBody(req)
     const orderId = String(body?.orderId || body?.id || `ord_${Date.now()}`).trim()
+    const cleanOrderId = orderId.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 64)
+
+    // Check if orderId is in queueManager.completedOrderIds (or .tombstones.json)
+    const isCompleted =
+      (orderId && queueManager.completedOrderIds?.has(orderId)) ||
+      (cleanOrderId && queueManager.completedOrderIds?.has(cleanOrderId)) ||
+      (typeof queueManager.isOrderCompleted === 'function' &&
+        (queueManager.isOrderCompleted(orderId) || (cleanOrderId && queueManager.isOrderCompleted(cleanOrderId))))
+
+    if (isCompleted) {
+      return sendJson(res, 409, {
+        error: "Order already delivered and completed. Re-delivery rejected.",
+        code: "ALREADY_COMPLETED"
+      })
+    }
+
     const recipient = String(body?.minecraftUsername || body?.recipient || '').trim()
     const money = Number(body?.moneyAmount ?? body?.money ?? 0)
     const spawners = Number(body?.spawners || 0)
@@ -1796,6 +1832,14 @@ const handleHttpRequest = async (req, res) => {
       moneyDelivered: Boolean(body?.moneyDelivered),
       itemsDelivered: Boolean(body?.itemsDelivered)
     })
+
+    if (result.status === 'tombstoned' || result.status === 'rejected' || result.rejected || result.code === 'ALREADY_COMPLETED') {
+      return sendJson(res, 409, {
+        error: "Order already delivered and completed. Re-delivery rejected.",
+        code: "ALREADY_COMPLETED"
+      })
+    }
+
     const order = result.order || result
     await notifyDiscordOrder(order)
     broadcastToRenderer('delivery_status', order.id || order.orderId, order.recipient || order.minecraftUsername, 'queued')

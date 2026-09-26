@@ -59,6 +59,12 @@ export const HOSTILE_MOBS = new Set([
   'stray'
 ])
 
+export const DANGEROUS_ENTITIES = new Set([
+  'end_crystal',
+  'hopper_minecart',
+  'tnt'
+])
+
 export const WEAPON_KEYWORDS = [
   'sword',
   'axe',
@@ -107,11 +113,17 @@ export function checkAreaSafety(bot, radius = 5, buyerUsername = null) {
     })
   }
 
+  const reusablePos = new Vec3(0, 0, 0)
+
   // 1. Check solid ground footing beneath bot's feet across ALL Y-levels (dy = 1..4)
   if (typeof bot.blockAt === 'function') {
+    const bx = Math.floor(bot.entity.position.x)
+    const by = Math.floor(bot.entity.position.y)
+    const bz = Math.floor(bot.entity.position.z)
     let hasSolidGround = false
     for (let dy = 1; dy <= 4; dy++) {
-      const groundBlock = bot.blockAt(bot.entity.position.offset(0, -dy, 0))
+      reusablePos.set(bx, by - dy, bz)
+      const groundBlock = bot.blockAt(reusablePos)
       const blockName = groundBlock?.name?.toLowerCase() || ''
       if (
         groundBlock &&
@@ -139,31 +151,51 @@ export function checkAreaSafety(bot, radius = 5, buyerUsername = null) {
 
   // 2. Scan block hazards around bot and buyer
   if (typeof bot.blockAt === 'function') {
-    for (const center of centers) {
-      const base = center.pos.floored()
-      for (let dx = -radius; dx <= radius; dx++) {
-        for (let dy = -radius; dy <= radius; dy++) {
-          for (let dz = -radius; dz <= radius; dz++) {
-            const checkPos = base.offset(dx, dy, dz)
-            const euclideanDist = center.pos.distanceTo(
-              new Vec3(checkPos.x + 0.5, checkPos.y + 0.5, checkPos.z + 0.5)
-            )
-            if (euclideanDist > radius + 0.75) continue
+    const checkedBlocks = new Set()
+    const maxDist = radius + 0.75
+    const maxDistSq = maxDist * maxDist
 
-            const block = bot.blockAt(checkPos)
+    for (const center of centers) {
+      const baseX = Math.floor(center.pos.x)
+      const baseY = Math.floor(center.pos.y)
+      const baseZ = Math.floor(center.pos.z)
+      const cx = center.pos.x
+      const cy = center.pos.y
+      const cz = center.pos.z
+
+      for (let dx = -radius; dx <= radius; dx++) {
+        const checkX = baseX + dx
+        const diffX = checkX + 0.5 - cx
+        const diffXSq = diffX * diffX
+
+        for (let dy = -radius; dy <= radius; dy++) {
+          const checkY = baseY + dy
+          const diffY = checkY + 0.5 - cy
+          const diffYSq = diffY * diffY
+
+          for (let dz = -radius; dz <= radius; dz++) {
+            const checkZ = baseZ + dz
+            const diffZ = checkZ + 0.5 - cz
+            const distSq = diffXSq + diffYSq + diffZ * diffZ
+
+            if (distSq > maxDistSq) continue
+
+            const blockKey = `${checkX},${checkY},${checkZ}`
+            if (checkedBlocks.has(blockKey)) continue
+            checkedBlocks.add(blockKey)
+
+            reusablePos.set(checkX, checkY, checkZ)
+            const block = bot.blockAt(reusablePos)
             if (!block || !block.name) continue
 
             const blockName = block.name.toLowerCase()
-            if (
-              DANGEROUS_BLOCKS.has(blockName) ||
-              blockName.includes('lava') ||
-              blockName.includes('campfire')
-            ) {
+            if (DANGEROUS_BLOCKS.has(blockName)) {
+              const euclideanDist = Math.sqrt(distSq)
               return {
                 safe: false,
                 hazard: {
                   name: block.name,
-                  position: { x: checkPos.x, y: checkPos.y, z: checkPos.z },
+                  position: { x: checkX, y: checkY, z: checkZ },
                   distance: Number(euclideanDist.toFixed(2)),
                   centerType: center.label
                 }
@@ -178,25 +210,25 @@ export function checkAreaSafety(bot, radius = 5, buyerUsername = null) {
   // 3. Check for nearby hostile mobs & armed players (including buyerUser) within 8 blocks
   if (bot.entities) {
     const botUser = (bot._client?.username || bot.username || '').toLowerCase()
+    const botX = bot.entity.position.x
+    const botY = bot.entity.position.y
+    const botZ = bot.entity.position.z
 
-    for (const entity of Object.values(bot.entities)) {
+    for (const id in bot.entities) {
+      const entity = bot.entities[id]
       if (!entity || !entity.position || entity === bot.entity) continue
 
-      const dist = bot.entity.position.distanceTo(entity.position)
-      if (dist > 8.0) continue
+      const diffX = botX - entity.position.x
+      const diffY = botY - entity.position.y
+      const diffZ = botZ - entity.position.z
+      const distSq = diffX * diffX + diffY * diffY + diffZ * diffZ
+      if (distSq > 64.0) continue
 
+      const dist = Math.sqrt(distSq)
       const entityName = (entity.name || entity.mobType || '').toLowerCase()
 
       // Check for dangerous entities within 5 blocks
-      if (
-        dist <= 5.0 &&
-        (entity.name === 'end_crystal' ||
-          entity.name === 'hopper_minecart' ||
-          entity.name === 'tnt' ||
-          entityName === 'end_crystal' ||
-          entityName === 'hopper_minecart' ||
-          entityName === 'tnt')
-      ) {
+      if (dist <= 5.0 && DANGEROUS_ENTITIES.has(entityName)) {
         return {
           safe: false,
           hazard: {
@@ -226,8 +258,7 @@ export function checkAreaSafety(bot, radius = 5, buyerUsername = null) {
 
         // Check if holding a weapon or offensive item (checks ALL players including buyerUser)
         const heldItem = entity.heldItem?.name?.toLowerCase() || ''
-        const isArmed = WEAPON_KEYWORDS.some((kw) => heldItem.includes(kw))
-        if (isArmed) {
+        if (heldItem && WEAPON_KEYWORDS.some((kw) => heldItem.includes(kw))) {
           return {
             safe: false,
             hazard: {
